@@ -16,6 +16,15 @@ def test_instruction_lookup():
     assert styles.instruction("nonsense") == styles.instruction(styles.DEFAULT_STYLE)
 
 
+def test_llm_styles_follow_the_published_prompting_advice():
+    prompt = styles.instruction("prompt").lower()
+    for advice in ("one direct imperative sentence", "context", "requirements", "constraints", "output", "never invent"):
+        assert advice in prompt, advice
+    coding = styles.instruction("coding").lower()
+    for advice in ("goal", "where", "done when", "exactly", "never invent"):
+        assert advice in coding, advice
+
+
 def test_every_visible_label_has_a_french_translation():
     labels = [text for item in styles.STYLES for text in item[1:3]] + ["Custom"]
     labels += [hint for _, _, hint in settings.WHISPER_MODELS]

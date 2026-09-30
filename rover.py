@@ -22,6 +22,8 @@ from PIL import Image, ImageDraw, ImageSequence, ImageTk
 
 import appicons
 import layered
+import secrets_store
+import transcribe
 import startup
 import styles
 import mascots
@@ -356,7 +358,8 @@ class RoverApp:
         self.build_menu()
 
         self.recorder = Recorder(self.thread_status, self.transcription_ready, self.thread_error,
-                                 model_name=self.prefs["whisper_model"])
+                                 model_name=self.prefs["whisper_model"], get_config=lambda: self.prefs["transcription"])
+        self.recorder.warm_up()
         self.apply_look(initial=True)
         self.hotkey_ok = register_hotkey()
         if not self.hotkey_ok:
@@ -1115,6 +1118,21 @@ class RoverApp:
         tk.Frame(body, bg=panel, height=12).pack()
         card(body, theme, INNER_W, lambda inner: self.fill_state_zone(inner, state), min_height=132).pack()
 
+    def transcription_step(self) -> str:
+        config = self.prefs["transcription"]
+        if transcribe.is_remote(config):
+            return tr("Transcription ({engine})").format(engine=transcribe.engine_label(config))
+        return tr("Local transcription (Whisper)")
+
+    def pipeline_line(self) -> str:
+        config = self.prefs["transcription"]
+        tool = provider_label(self.prefs) if rewrite_enabled(self.prefs) else ""
+        if transcribe.is_remote(config):
+            engine = transcribe.engine_label(config)
+            return (tr("{engine} transcription  ·  {tool} rewrite").format(engine=engine, tool=tool) if tool
+                    else tr("{engine} transcription  ·  no rewrite").format(engine=engine))
+        return tr("Local Whisper  ·  {tool} rewrite").format(tool=tool) if tool else tr("Local Whisper  ·  no rewrite")
+
     def state_texts(self, state: str) -> tuple[str, str]:
         language = tr("Dictation in French") if self.language == "fr" else tr("Dictation in English")
         return {
@@ -1133,8 +1151,7 @@ class RoverApp:
             message = self.notice or tr("Click the mascot or use the shortcut, then speak. The text is inserted into the active field and never sent.")
             tk.Label(inner, text=message, bg=bg, fg=theme["sec"], font=(FONT_REGULAR, 9), wraplength=width,
                      justify="left").pack(anchor="w")
-            tk.Label(inner, text=(tr("Local Whisper  ·  {tool} rewrite").format(tool=provider_label(self.prefs))
-                                  if rewrite_enabled(self.prefs) else tr("Local Whisper  ·  no rewrite")), bg=bg, fg=theme["sec"],
+            tk.Label(inner, text=self.pipeline_line(), bg=bg, fg=theme["sec"],
                      font=(FONT_REGULAR, 8)).pack(anchor="w", pady=(8, 0))
         elif state == "recording":
             top = tk.Frame(inner, bg=bg)
@@ -1149,7 +1166,7 @@ class RoverApp:
             self.draw_wave()
         elif state == "processing":
             done = self.step == "codex"
-            self.step_row(inner, tr("Local transcription (Whisper)"), done=done, spinner=not done)
+            self.step_row(inner, self.transcription_step(), done=done, spinner=not done)
             self.step_row(inner, tr("Rewriting ({tool})…").format(tool=provider_label(self.prefs) or "…"), done=False, spinner=done, dim=not done)
         elif state == "text":
             tk.Label(inner, text=tr("Text ready to insert"), bg=bg, fg=theme["ok"], font=(FONT_SEMIBOLD, 9)).pack(anchor="w")
@@ -1626,6 +1643,22 @@ class SettingsWindow:
                     lambda v: (app.prefs.__setitem__("language", v), app.apply_advanced()), label=tr("Dictation language"))
 
     def fill_speech(self, inner):
+        app = self.app
+        config = app.prefs["transcription"]
+
+        def set_engine(value):
+            config["engine"] = value
+            app.apply_advanced()
+            self.top.after(10, self.build)          # the section below changes shape
+
+        self.choice(inner, ((tr("This PC"), "local"), ("OpenAI", "openai"), ("Groq", "groq"), (tr("Other"), "custom")),
+                    lambda: config.get("engine", "local"), set_engine, pady=(2, 0), label=tr("Transcribe with"))
+        if config.get("engine", "local") == "local":
+            self.fill_local_models(inner)
+        else:
+            self.fill_remote(inner)
+
+    def fill_local_models(self, inner):
         app, theme = self.app, self.app.theme
         bg = theme["card"]
         grid = tk.Frame(inner, bg=bg)
@@ -1635,11 +1668,15 @@ class SettingsWindow:
             holder = tk.Frame(grid, bg=theme["border"], padx=2, pady=2)
             cell = tk.Frame(holder, bg=theme["panel"], cursor="hand2")
             cell.pack(fill="both", expand=True)
-            tk.Label(cell, text=name, bg=theme["panel"], fg=theme["text"], font=(FONT_SEMIBOLD, 10), cursor="hand2").pack(anchor="w", padx=8, pady=(6, 0))
+            top = tk.Frame(cell, bg=theme["panel"], cursor="hand2")
+            top.pack(fill="x", padx=8, pady=(6, 0))
+            tk.Label(top, text=name, bg=theme["panel"], fg=theme["text"], font=(FONT_SEMIBOLD, 10), cursor="hand2").pack(side="left")
+            if name == "base":
+                tk.Label(top, text="★", bg=theme["panel"], fg=theme["accent"], font=(FONT_SEMIBOLD, 9), cursor="hand2").pack(side="left", padx=(4, 0))
             tk.Label(cell, text=size, bg=theme["panel"], fg=theme["accent"], font=(FONT_MONO, 8), cursor="hand2").pack(anchor="w", padx=8)
             tk.Label(cell, text=tr(hint), bg=theme["panel"], fg=theme["sec"], font=(FONT_REGULAR, 8), wraplength=112, justify="left",
                      cursor="hand2").pack(anchor="w", padx=8, pady=(0, 7))
-            for widget in (holder, cell, *cell.winfo_children()):
+            for widget in (holder, cell, top, *cell.winfo_children(), *top.winfo_children()):
                 widget.bind("<Button-1>", lambda event, n=name: (app.prefs.__setitem__("whisper_model", n), app.apply_advanced(),
                                                               self.refresh_advanced()))
             holder.grid(row=index // 3, column=index % 3, padx=(0, 8), pady=(0, 8), sticky="nsew")
@@ -1652,8 +1689,91 @@ class SettingsWindow:
                 holder.configure(bg=theme["accent"] if app.prefs["whisper_model"] == name else theme["border"])
 
         self.refreshers.append(refresh)
-        tk.Label(inner, text=tr("Runs on your PC. A model is downloaded once, the first time it is used."), bg=bg, fg=theme["sec"],
+        tk.Label(inner, text="★ " + tr("Recommended: the fastest model that stays accurate for dictation.") + " " +
+                 tr("Runs on your PC. A model is downloaded once, the first time it is used."), bg=bg, fg=theme["sec"],
                  font=(FONT_REGULAR, 8), wraplength=400, justify="left").pack(anchor="w", pady=(2, 0))
+
+    def fill_remote(self, inner):
+        app, theme = self.app, self.app.theme
+        bg = theme["card"]
+        config = app.prefs["transcription"]
+        engine = config["engine"]
+        preset = transcribe.ENGINES[engine]
+
+        def row(label: str):
+            frame = tk.Frame(inner, bg=bg)
+            frame.pack(fill="x", pady=(8, 0))
+            tk.Label(frame, text=label, bg=bg, fg=theme["text"], font=(FONT_REGULAR, 10)).pack(side="left")
+            return frame
+
+        # model
+        frame = row(tr("Model"))
+        field, variable = self.entry(frame, config.get("model") or preset["model"],
+                                     lambda v: config.__setitem__("model", "" if v == preset["model"] else v), width=30)
+        field.pack(side="right", ipady=3)
+        if preset["models"]:
+            chips = tk.Frame(inner, bg=bg)
+            chips.pack(fill="x", pady=(5, 0))
+            for index, name in enumerate(preset["models"]):
+                chip = tk.Button(chips, text=name, relief="flat", bd=0, highlightthickness=1, font=(FONT_MONO, 8), padx=7, pady=2,
+                                 cursor="hand2", command=lambda v=name: variable.set(v))
+                chip.grid(row=index // 2, column=index % 2, padx=(5, 0), pady=(0, 4), sticky="e")
+                restyle_toggle(chip, theme, False, bg)
+            chips.grid_columnconfigure(0, weight=1)
+        if engine == "custom":
+            frame = row(tr("Service address"))
+            address, _ = self.entry(frame, config.get("base_url", ""), lambda v: config.__setitem__("base_url", v), width=30)
+            address.pack(side="right", ipady=3)
+            tk.Label(inner, text=tr("OpenAI-compatible, for example https://api.example.com/v1"), bg=bg, fg=theme["sec"],
+                     font=(FONT_REGULAR, 8)).pack(anchor="e")
+
+        # API key: typed here, stored encrypted for this Windows account, never shown again
+        frame = row(tr("API key"))
+        key_field = tk.Entry(frame, show="•", width=22, relief="flat", bg=theme["panel"], fg=theme["text"], insertbackground=theme["text"],
+                             highlightthickness=1, highlightbackground=theme["border"], highlightcolor=theme["accent"], font=(FONT_MONO, 9))
+        key_field.bind("<Button-1>", lambda event: key_field.focus_force())
+        status = tk.Label(inner, bg=bg, fg=theme["sec"], font=(FONT_REGULAR, 8), anchor="w", justify="left", wraplength=400)
+
+        def show_status(text: str | None = None, good: bool | None = None):
+            source = transcribe.key_source(config)
+            if text is None:
+                text = {"stored": tr("Key saved on this PC (encrypted)"),
+                        "environment": tr("Using {env} from your environment").format(env=preset["env"]),
+                        "": tr("No key yet: paste it above, or set {env}").format(env=preset["env"])}[source]
+                good = True if source else None
+            status.configure(text=text, fg=theme["ok"] if good else (theme["err"] if good is False else theme["sec"]))
+
+        def save_key():
+            value = key_field.get().strip()
+            if value:
+                config["api_key"] = secrets_store.protect(value)
+                key_field.delete(0, "end")
+            show_status()
+
+        def remove_key():
+            config["api_key"] = ""
+            show_status()
+
+        def test():
+            show_status(tr("Testing…"))
+            snapshot = dict(config)
+
+            def work():
+                ok, message = transcribe.test_connection(snapshot)
+                self.top.after(0, lambda: show_status(("✓ " if ok else "✗ ") + message, ok))
+
+            threading.Thread(target=work, daemon=True).start()
+
+        for caption, command in ((tr("Test"), test), (tr("Remove"), remove_key), (tr("Save key"), save_key)):
+            tk.Button(frame, text=caption, command=command, relief="flat", bd=0, highlightthickness=1, font=(FONT_SEMIBOLD, 8),
+                      padx=8, pady=3, cursor="hand2", bg=theme["card"], fg=theme["text"], activebackground=theme["border"],
+                      highlightbackground=theme["border"]).pack(side="right", padx=(5, 0))
+        key_field.pack(side="right", ipady=3)
+        status.pack(fill="x", pady=(4, 0))
+        show_status()
+        tk.Label(inner, text=tr("The recording is sent to this service to be transcribed. An API key is required: a ChatGPT or Codex "
+                                "sign-in does not cover the audio API, which the service bills separately."),
+                 bg=bg, fg=theme["sec"], font=(FONT_REGULAR, 8), wraplength=400, justify="left").pack(anchor="w", pady=(6, 0))
 
     def fill_rewrite(self, inner):
         app, theme = self.app, self.app.theme

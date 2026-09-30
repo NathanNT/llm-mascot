@@ -142,12 +142,27 @@ Sombre par défaut, avec un thème clair chaleureux :<br>
 |---|---|
 | **Lancer au démarrage de Windows** | Démarre la mascotte à l'ouverture de votre session (une entrée par utilisateur, sans droits administrateur). Appliqué en appuyant sur *Enregistrer*. |
 | **Quand le texte est prêt** | *Le taper dans le champ* (par défaut) ou *Copier seulement* dans le presse-papiers. |
-| **Reconnaissance vocale** | Choisissez le modèle Whisper qui tourne sur votre PC : de `tiny` (≈75 Mo, le plus rapide) à `large-v3` (≈3 Go, le plus précis). Un modèle se télécharge une seule fois, à sa première utilisation. |
+| **Transcrire avec** | *Ce PC* (par défaut, privé, hors ligne) ou un service externe : **OpenAI** (`gpt-4o-mini-transcribe`, le rapide et économique), **Groq** (`whisper-large-v3-turbo`, très rapide, offre gratuite) ou **Autre** (toute adresse compatible OpenAI). Si le service est injoignable ou sans crédit, le modèle local prend le relais quand il est installé. |
+| **Modèle vocal** (Ce PC) | `tiny` (≈75 Mo) à `large-v3` (≈3 Go). **`base` (★) est le meilleur compromis vitesse/précision** pour la dictée ; il se charge en arrière-plan au démarrage pour que la première dictée réponde tout de suite. Un modèle se télécharge une seule fois, à sa première utilisation. |
 | **Reformuler avec** | *Automatique* (Codex s'il est disponible, sinon Claude), *Codex*, *Claude*, ou *Non* pour toujours insérer la transcription brute. |
 | **Modèle Codex / Claude** | Le modèle utilisé par chaque outil. Vide = le modèle par défaut de l'outil ; pour Claude, vous pouvez saisir un alias comme `sonnet`, `opus` ou `haiku`, ou un nom complet. |
 | **Style de transcription** | La consigne d'édition envoyée avec votre dictée. Choisissez un style prédéfini ou écrivez le vôtre. |
 
-Les styles : **Mise au propre** (hésitations et ponctuation, vos propres mots), **Correction** (orthographe et syntaxe seulement, rien d'autre ne change), **Court et simple**, **Étoffé** (explicite l'implicite, n'invente rien), **Prompt structuré** (objectif, contexte, contraintes, résultat attendu), **Liste à puces**, **Ton professionnel**, **Ton décontracté** et **Personnalisé**. Modifiez le texte d'un style prédéfini et il devient *Personnalisé*.
+Les styles : **Mise au propre** (hésitations et ponctuation, vos propres mots), **Correction** (orthographe et syntaxe seulement, rien d'autre ne change), **Court et simple**, **Étoffé** (explicite l'implicite, n'invente rien), **Prompt prêt pour une IA**, **Tâche de code**, **Liste à puces**, **Ton professionnel**, **Ton décontracté** et **Personnalisé**. Modifiez le texte d'un style prédéfini et il devient *Personnalisé*.
+
+<div align="center">
+<img src="docs/img/fr/advanced-service.png" alt="Choisir un service de transcription externe" width="640">
+</div>
+
+#### Un transcripteur externe : une clé API, pas votre connexion ChatGPT
+
+Les API vocales d'OpenAI et de Groq sont facturées ou limitées **par clé API**. Une connexion ChatGPT ou Codex ne les inclut pas : impossible donc de dépenser les crédits de votre abonnement pour transcrire, et l'application ne lit pas votre connexion ChatGPT/Codex pour cela. Créez une clé sur le site du fournisseur, collez-la dans *Clé API* et appuyez sur *Enregistrer la clé* : elle est chiffrée pour votre compte Windows (DPAPI) et jamais écrite en clair dans `settings.json`. Vous pouvez aussi définir la variable d'environnement `OPENAI_API_KEY` / `GROQ_API_KEY`. *Tester* vérifie la clé sans rien dépenser. Quand vous choisissez un service, **l'enregistrement lui est envoyé**.
+
+Pour la vitesse, gardez les valeurs par défaut : `gpt-4o-mini-transcribe` (OpenAI) ou `whisper-large-v3-turbo` (Groq) sont les modèles petits et rapides, et la dictée est une tâche facile pour eux. Le modèle local `base` est l'alternative privée.
+
+#### Pourquoi les styles « Prompt prêt pour une IA » et « Tâche de code » ont cette forme
+
+Ils suivent ce sur quoi les guides de prompt d'Anthropic et d'OpenAI s'accordent : être clair et direct, mettre la tâche en premier, ajouter le contexte et la raison, lister des exigences concrètes, dire quoi faire plutôt que quoi éviter, préciser le format de sortie, garder noms et identifiants exacts, ne rien ajouter pour meubler. Les styles transforment une dictée décousue en cette forme sans rien inventer. Sources : [bonnes pratiques de prompt de Claude](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices) et [prompt engineering d'OpenAI](https://developers.openai.com/api/docs/guides/prompt-engineering).
 
 Claude est utilisé via [Claude Code](https://docs.claude.com/en/docs/claude-code) en mode impression, avec tous les outils désactivés et sans session enregistrée : il ne fait que reformuler du texte.
 
@@ -160,7 +175,13 @@ Tout ce que vous changez dans la fenêtre de réglages est enregistré dans `set
   "ui_language": "auto",        // "auto" suit Windows, ou "en" / "fr"
   "language": "fr",             // langue de dictée : "en" ou "fr" (aussi le sélecteur FR/EN du panneau)
   "insert": "type",             // "type" tape au niveau du curseur ; "copy" met seulement le texte dans le presse-papiers (Ctrl+V)
-  "whisper_model": "base",      // "tiny", "base", "small", "medium"… plus gros = plus précis, plus lent
+  "whisper_model": "base",      // modèle local : "tiny", "base", "small", "turbo", "medium", "large-v3"
+  "transcription": {
+    "engine": "local",          // "local", "openai", "groq" ou "custom"
+    "model": "",                // vide = le modèle rapide par défaut du service
+    "base_url": "",             // "custom" seulement : une adresse compatible OpenAI, https (http seulement pour localhost)
+    "api_key": ""               // écrite par l'application, chiffrée ; une variable d'environnement convient aussi
+  },
   "quotas_url": "",             // service de consommation optionnel, voir plus bas
   "rewrite_provider": "auto",   // "auto", "codex", "claude" ou "off" (insère la transcription brute)
   "rewrite_style": "faithful",  // l'identifiant d'un style, ou "custom" pour utiliser "rewrite_prompt"
@@ -234,12 +255,13 @@ Ajouter une langue : traduisez les textes dans `i18n.py` (un test vérifie que c
 | Ctrl+Alt+R ne fait rien | Une autre application possède ce raccourci ; cliquez sur la mascotte. |
 | Le texte part dans la mauvaise fenêtre | Cliquez dans le champ voulu *avant* de dicter ; la mascotte retient la dernière fenêtre utilisée. |
 | La saisie est peu fiable dans une application | Mettez `"insert": "copy"` : le texte va dans le presse-papiers et vous le collez vous-même. Le panneau a aussi un bouton **Copier** et le menu du clic droit propose *Copier le dernier texte*. |
+| « La clé API a été refusée » | Vérifiez la clé sur le site du fournisseur ; les abonnements ChatGPT ne fonctionnent pas ici (voir plus haut). Utilisez *Tester* dans les paramètres avancés. |
 | Une partie de mon brouillon a été remplacée | Le texte est tapé au niveau du curseur : un passage *sélectionné* est remplacé, comme avec n'importe quelle saisie. La mascotte ne prend jamais le focus du clavier quand on clique dessus, donc votre curseur et votre brouillon restent intacts. |
 | Un plantage | Consultez `rover.log` à côté de `rover.py`. |
 
 ## Confidentialité et sécurité
 
-- L'audio est traité en mémoire par un modèle local et n'est jamais écrit sur disque ni envoyé.
+- Par défaut, l'audio est traité en mémoire par un modèle local et n'est jamais écrit sur disque ni envoyé. Seul le choix d'un service de transcription externe lui envoie l'enregistrement, et la clé API est alors stockée chiffrée pour votre compte Windows.
 - Les prompts ne sont pas conservés. La reformulation Codex optionnelle envoie le **texte transcrit** à OpenAI via votre propre session Codex, comme n'importe quel prompt Codex.
 - Les identifiants de vos comptes restent à leur place habituelle ; l'application ne les lit jamais.
 - Les icônes des raccourcis ne sont récupérées qu'aux adresses que vous ajoutez.

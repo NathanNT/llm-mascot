@@ -16,9 +16,19 @@ STYLES: list[tuple[str, str, str, str]] = [
     ("detailed", "Detailed", "Spell out what is implied and organise it",
      "Expand it into a fuller, well-organised text: spell out the context and requirements the speaker clearly implies, "
      "use clear paragraphs and precise wording. Never invent facts, names, numbers or requirements."),
-    ("prompt", "Structured prompt", "Goal, context, constraints, expected output",
-     "Turn it into an effective prompt for an AI assistant: state the goal first, then the context, the constraints and "
-     "the expected output format as short labelled sections. Use only what was said."),
+    ("prompt", "AI-ready prompt", "Clear goal first, then context, requirements, output",
+     "Rewrite it as a prompt an AI assistant gets right the first time. Start with the task as one direct imperative "
+     "sentence. Then add only what the speaker actually gave, as short labelled lines: Context (why, for whom), "
+     "Requirements (one per line, concrete and checkable), Constraints (say what to do rather than what to avoid), "
+     "Output (format, length, language). Use plain, direct wording: no greeting, no politeness filler, no repetition. "
+     "If order matters, number the steps; if several unrelated requests were made, number them. Keep names, paths, "
+     "identifiers, numbers and quoted text exactly. Never invent context, requirements or examples."),
+    ("coding", "Coding task", "Goal, where, expected behavior, how to verify",
+     "Rewrite it as a precise task for a coding agent. First line: the goal as an imperative sentence. Then only the "
+     "parts the speaker gave, as short labelled lines: Where (exact files, functions, components or commands), "
+     "Current vs expected behavior, Constraints (libraries, style, what must not change), Done when (how to check it: "
+     "tests, commands, visible result). Keep every identifier, path, command and error message exactly as said. "
+     "Never invent file names, requirements or details."),
     ("bullets", "Bullet points", "One idea per line",
      "Turn it into a concise bulleted list, one idea per line, grouped logically. Keep technical terms and names exactly."),
     ("professional", "Professional tone", "Polished and courteous",

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 from pathlib import Path
 
@@ -50,6 +51,7 @@ DEFAULTS: dict = {
     "quotas_url": "",       # optional local JSON service; see README
     "codex": {"home": "", "model": "", "reasoning": "low", "auth_store": ""},
     "claude": {"model": ""},
+    "transcription": {"engine": "local", "model": "", "base_url": "", "api_key": ""},   # api_key is stored encrypted (DPAPI)
 }
 
 
@@ -81,6 +83,16 @@ def load() -> dict:
             data["rewrite_provider"] = "off"              # older files switched the rewrite off here
     if isinstance(stored.get("claude"), dict) and isinstance(stored["claude"].get("model"), str):
         data["claude"]["model"] = stored["claude"]["model"]
+    if isinstance(stored.get("transcription"), dict):
+        incoming = stored["transcription"]
+        if incoming.get("engine") in ("local", "openai", "groq", "custom"):
+            data["transcription"]["engine"] = incoming["engine"]
+        if isinstance(incoming.get("model"), str) and re.fullmatch(r"[\w.\-:/]{0,80}", incoming["model"]):
+            data["transcription"]["model"] = incoming["model"]
+        if isinstance(incoming.get("base_url"), str):
+            data["transcription"]["base_url"] = incoming["base_url"][:200]
+        if isinstance(incoming.get("api_key"), str) and incoming["api_key"].startswith("dpapi:"):
+            data["transcription"]["api_key"] = incoming["api_key"]      # never accept a clear-text key from the file
     if stored.get("rewrite_provider") in REWRITE_PROVIDERS:
         data["rewrite_provider"] = stored["rewrite_provider"]
     for key in ("rewrite_style", "rewrite_prompt"):

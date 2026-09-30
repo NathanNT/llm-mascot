@@ -85,3 +85,13 @@ def test_old_files_that_switched_the_rewrite_off_keep_it_off():
     settings.SETTINGS_FILE.write_text(json.dumps({"codex": {"rewrite": "off", "model": "x"}}))
     data = settings.load()
     assert data["rewrite_provider"] == "off" and data["codex"]["model"] == "x"
+
+
+def test_transcription_settings_are_validated_and_clear_text_keys_are_dropped():
+    settings.SETTINGS_FILE.write_text(json.dumps({"transcription": {"engine": "groq", "model": "whisper-large-v3-turbo",
+                                                                    "base_url": "https://x.test/v1", "api_key": "sk-clear-text"}}))
+    data = settings.load()["transcription"]
+    assert data["engine"] == "groq" and data["model"] == "whisper-large-v3-turbo" and data["api_key"] == ""
+    settings.SETTINGS_FILE.write_text(json.dumps({"transcription": {"engine": "telepathy", "model": "a b; c", "api_key": "dpapi:AAA"}}))
+    data = settings.load()["transcription"]
+    assert data["engine"] == "local" and data["model"] == "" and data["api_key"] == "dpapi:AAA"
