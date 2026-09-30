@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import random
+import sys
 import threading
 import time
 import webbrowser
@@ -519,6 +520,7 @@ class RoverApp:
         self.menu = tk.Menu(self.root, tearoff=0)
         self.menu.add_command(label=tr("Dictate / stop · Ctrl+Alt+R"), command=self.toggle_voice)
         self.menu.add_command(label=tr("Copy last text"), command=self.copy_text)
+        self.menu.add_command(label=tr("Compare speech models…"), command=self.open_benchmark)
         self.menu.add_command(label=tr("Customize…"), command=self.open_settings)
         self.menu.add_command(label=tr("Open Bloub"), command=lambda: webbrowser.open(prefs.BLOUB_URL))
         self.menu.add_command(label=tr("Open Claude usage"), command=lambda: webbrowser.open(CLAUDE_USAGE_URL))
@@ -1370,6 +1372,14 @@ class RoverApp:
             return
         self.settings_window = SettingsWindow(self)
 
+    def open_benchmark(self) -> None:
+        """The benchmark is its own small program, so a slow model never freezes the mascot."""
+        import subprocess
+        python = Path(sys.executable)
+        pythonw = python.with_name("pythonw.exe")
+        subprocess.Popen([str(pythonw if pythonw.exists() else python), str(HERE / "benchmark.py")], cwd=str(HERE),
+                         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+
     def apply_advanced(self) -> None:
         """Settings that need no redraw: the speech model takes effect at the next dictation."""
         self.recorder.set_model(self.prefs["whisper_model"])
@@ -1582,9 +1592,9 @@ class SettingsWindow:
         right = tk.Frame(columns, bg=theme["desk"])
         right.pack(side="left", anchor="n")
         self.section(left, tr("General"), self.fill_general, width=440).pack(pady=(0, 12))
-        self.section(left, tr("Speech recognition"), self.fill_speech, width=440).pack(pady=(0, 12))
-        self.section(left, tr("Text rewriting"), self.fill_rewrite, width=440).pack()
-        self.section(right, tr("Transcription style"), self.fill_style, width=440).pack()
+        self.section(left, tr("Speech recognition"), self.fill_speech, width=440).pack()
+        self.section(right, tr("Transcription style"), self.fill_style, width=440).pack(pady=(0, 12))
+        self.section(right, tr("Text rewriting"), self.fill_rewrite, width=440).pack()
         self.refresh_advanced()
 
     def refresh_advanced(self):
@@ -1657,6 +1667,7 @@ class SettingsWindow:
             self.fill_local_models(inner)
         else:
             self.fill_remote(inner)
+        button(inner, self.app.theme, tr("Benchmark the models…"), app.open_benchmark).pack(anchor="w", pady=(8, 0))
 
     def fill_local_models(self, inner):
         app, theme = self.app, self.app.theme
@@ -1689,8 +1700,7 @@ class SettingsWindow:
                 holder.configure(bg=theme["accent"] if app.prefs["whisper_model"] == name else theme["border"])
 
         self.refreshers.append(refresh)
-        tk.Label(inner, text="★ " + tr("Recommended: the fastest model that stays accurate for dictation.") + " " +
-                 tr("Runs on your PC. A model is downloaded once, the first time it is used."), bg=bg, fg=theme["sec"],
+        tk.Label(inner, text="★ " + tr("Fast default. Models run on this PC and download once; compare them with the benchmark."), bg=bg, fg=theme["sec"],
                  font=(FONT_REGULAR, 8), wraplength=400, justify="left").pack(anchor="w", pady=(2, 0))
 
     def fill_remote(self, inner):
@@ -1822,7 +1832,7 @@ class SettingsWindow:
         buttons = {}
         entries = [(item[0], tr(item[1])) for item in styles.STYLES] + [(styles.CUSTOM, tr("Custom"))]
         description = tk.Label(inner, bg=bg, fg=theme["sec"], font=(FONT_REGULAR, 9), anchor="w", justify="left", wraplength=400)
-        box = tk.Text(inner, width=50, height=11, wrap="word", relief="flat", bg=theme["panel"], fg=theme["text"],
+        box = tk.Text(inner, width=50, height=9, wrap="word", relief="flat", bg=theme["panel"], fg=theme["text"],
                       insertbackground=theme["text"], highlightthickness=1, highlightbackground=theme["border"],
                       highlightcolor=theme["accent"], font=(FONT_REGULAR, 10), padx=8, pady=6, undo=True)
         loading = {"busy": False}

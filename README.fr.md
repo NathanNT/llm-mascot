@@ -143,7 +143,7 @@ Sombre par défaut, avec un thème clair chaleureux :<br>
 | **Lancer au démarrage de Windows** | Démarre la mascotte à l'ouverture de votre session (une entrée par utilisateur, sans droits administrateur). Appliqué en appuyant sur *Enregistrer*. |
 | **Quand le texte est prêt** | *Le taper dans le champ* (par défaut) ou *Copier seulement* dans le presse-papiers. |
 | **Transcrire avec** | *Ce PC* (par défaut, privé, hors ligne) ou un service externe : **OpenAI** (`gpt-4o-mini-transcribe`, le rapide et économique), **Groq** (`whisper-large-v3-turbo`, très rapide, offre gratuite) ou **Autre** (toute adresse compatible OpenAI). Si le service est injoignable ou sans crédit, le modèle local prend le relais quand il est installé. |
-| **Modèle vocal** (Ce PC) | `tiny` (≈75 Mo) à `large-v3` (≈3 Go). **`base` (★) est le meilleur compromis vitesse/précision** pour la dictée ; il se charge en arrière-plan au démarrage pour que la première dictée réponde tout de suite. Un modèle se télécharge une seule fois, à sa première utilisation. |
+| **Modèle vocal** (Ce PC) | `tiny` (≈75 Mo) à `large-v3` (≈3 Go). **`base` (★) est le choix rapide par défaut**, chargé en arrière-plan au démarrage pour que la première dictée réponde tout de suite. Pour un vocabulaire technique, `turbo` ou un service externe est en général bien plus précis : mesurez-le avec le benchmark. Un modèle se télécharge une seule fois, à sa première utilisation. |
 | **Reformuler avec** | *Automatique* (Codex s'il est disponible, sinon Claude), *Codex*, *Claude*, ou *Non* pour toujours insérer la transcription brute. |
 | **Modèle Codex / Claude** | Le modèle utilisé par chaque outil. Vide = le modèle par défaut de l'outil ; pour Claude, vous pouvez saisir un alias comme `sonnet`, `opus` ou `haiku`, ou un nom complet. |
 | **Style de transcription** | La consigne d'édition envoyée avec votre dictée. Choisissez un style prédéfini ou écrivez le vôtre. |
@@ -165,6 +165,25 @@ Pour la vitesse, gardez les valeurs par défaut : `gpt-4o-mini-transcribe` (Open
 Ils suivent ce sur quoi les guides de prompt d'Anthropic et d'OpenAI s'accordent : être clair et direct, mettre la tâche en premier, ajouter le contexte et la raison, lister des exigences concrètes, dire quoi faire plutôt que quoi éviter, préciser le format de sortie, garder noms et identifiants exacts, ne rien ajouter pour meubler. Les styles transforment une dictée décousue en cette forme sans rien inventer. Sources : [bonnes pratiques de prompt de Claude](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices) et [prompt engineering d'OpenAI](https://developers.openai.com/api/docs/guides/prompt-engineering).
 
 Claude est utilisé via [Claude Code](https://docs.claude.com/en/docs/claude-code) en mode impression, avec tous les outils désactivés et sans session enregistrée : il ne fait que reformuler du texte.
+
+## Benchmark sur vos propres mots
+
+Le meilleur modèle dépend de *votre* vocabulaire. Le benchmark répond en une minute : saisissez le texte que vous allez lire, enregistrez-vous une fois en le lisant, cochez les modèles, et chacun transcrit **ce même enregistrement**. Chacun est noté par rapport à votre texte (mots erronés, substitutions, suppressions, ajouts) et chronométré, et vous voyez précisément quels mots sont faux.
+
+<div align="center">
+<img src="docs/img/fr/benchmark.png" alt="La fenêtre de benchmark comparant deux modèles vocaux" width="760">
+</div>
+
+- Ouvrez-le depuis *Personnalisation → Paramètres avancés → Comparer les modèles…* ou depuis le menu du clic droit de la mascotte.
+- Les modèles non installés affichent leur taille de téléchargement et sont décochés ; les services (OpenAI, Groq) apparaissent quand une clé est définie et tournent en parallèle des modèles locaux. Rien n'est envoyé nulle part sans que vous cochiez un service.
+- Le résumé désigne le **plus précis**, le **plus rapide** et le **meilleur compromis** (le plus rapide à moins de 2 points du plus précis). Le temps exclut le chargement unique du modèle, indiqué à part.
+- *Copier les résultats* place un tableau Markdown dans le presse-papiers.
+
+Sans fenêtre non plus :
+
+```powershell
+.venv\Scripts\python benchmark.py --audio parole.wav --text ce-que-jai-lu.txt --models base,turbo,groq --lang fr
+```
 
 ## Configuration
 
@@ -225,6 +244,9 @@ ui_kit.py       panneaux, icônes et tracés SVG lissés dessinés avec Pillow (
 layered.py      fenêtres à transparence par pixel (UpdateLayeredWindow) : bords nets, vrais fondus
 mascots.py      atlas de sprites, packs clippy.js, GIF – et lien événement → animation
 voice.py        capture du micro et transcription faster-whisper
+transcribe.py   service vocal externe optionnel (OpenAI, Groq…) avec repli local
+benchmark.py    compare les modèles vocaux sur vos propres mots (fenêtre ou ligne de commande)
+scoring.py      taux d'erreur de mots et différences entre une transcription et le texte lu
 core.py         reformulation Codex optionnelle et lecture de la consommation
 settings.py     préférences, liste de raccourcis, découverte des mascottes
 windows.py      raccourci clavier, suivi du focus, insertion du texte (SendInput), multi-écran

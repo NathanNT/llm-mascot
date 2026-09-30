@@ -4,7 +4,7 @@ from pathlib import Path
 import i18n
 
 ROOT = Path(__file__).resolve().parents[2]
-SOURCES = ["rover.py", "core.py", "voice.py", "settings.py", "appicons.py"]
+SOURCES = ["rover.py", "core.py", "voice.py", "settings.py", "appicons.py", "transcribe.py", "benchmark.py"]
 
 
 def literals_passed_to_tr():

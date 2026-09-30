@@ -143,7 +143,7 @@ Dark by default, with a warm light theme:<br>
 | **Launch at Windows startup** | Starts the mascot when you sign in (a per-user entry, no admin rights). Applied when you press *Save*. |
 | **When the text is ready** | *Type into the field* (default) or *Copy only* to the clipboard. |
 | **Transcribe with** | *This PC* (default, private, offline) or an external service: **OpenAI** (`gpt-4o-mini-transcribe`, the fast and cheap one), **Groq** (`whisper-large-v3-turbo`, very fast, free tier) or **Other** (any OpenAI-compatible address). If the service is unreachable or out of credit, the local model takes over when it is installed. |
-| **Speech model** (This PC) | `tiny` (≈75 MB) to `large-v3` (≈3 GB). **`base` (★) is the recommended speed/accuracy balance** for dictation; it is loaded in the background at start-up so the first dictation answers at once. A model is downloaded once, the first time it is used. |
+| **Speech model** (This PC) | `tiny` (≈75 MB) to `large-v3` (≈3 GB). **`base` (★) is the fast default**, loaded in the background at start-up so the first dictation answers at once. For technical vocabulary, `turbo` or an external service is usually much more accurate: measure it with the benchmark. A model is downloaded once, the first time it is used. |
 | **Rewrite with** | *Automatic* (Codex if available, else Claude), *Codex*, *Claude*, or *Off* to always insert the raw transcript. |
 | **Codex / Claude model** | The model each tool uses. Empty means the tool's own default; for Claude you can type an alias such as `sonnet`, `opus` or `haiku`, or a full model name. |
 | **Transcription style** | The editing instruction sent with your dictation. Choose a preset or write your own. |
@@ -165,6 +165,25 @@ For speed, leave the defaults: `gpt-4o-mini-transcribe` (OpenAI) or `whisper-lar
 They follow what Anthropic's and OpenAI's prompting guides agree on: be clear and direct, put the task first, add the context and the reason, list concrete requirements, say what to do rather than what to avoid, state the output format, keep names and identifiers exact, and never pad. The styles turn a rambling dictation into exactly that shape without inventing anything. Sources: [Claude prompting best practices](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices) and [OpenAI prompt engineering](https://developers.openai.com/api/docs/guides/prompt-engineering).
 
 Claude is used through [Claude Code](https://docs.claude.com/en/docs/claude-code) in print mode with every tool disabled and no saved session, so it only ever rewrites text.
+
+## Benchmark your own words
+
+Which model is best depends on *your* vocabulary. The benchmark answers that in a minute: type the text you will read, record yourself reading it once, tick the models, and every one of them transcribes **that same recording**. Each is scored against your text (word errors, substitutions, deletions, insertions) and timed, and you see exactly which words went wrong.
+
+<div align="center">
+<img src="docs/img/en/benchmark.png" alt="The benchmark window comparing two speech models" width="760">
+</div>
+
+- Open it from *Customize → Advanced settings → Benchmark the models…* or from the mascot's right-click menu.
+- Models that are not installed show their download size and are unticked; services (OpenAI, Groq) appear when a key is set and run in parallel with the local models. Nothing is sent anywhere unless you tick a service.
+- The summary names the **most accurate**, the **fastest**, and the **best balance** (the fastest model within 2 points of the most accurate one). Timing excludes the one-off model load, which is reported separately.
+- *Copy results* puts a Markdown table on the clipboard.
+
+No window needed either:
+
+```powershell
+.venv\Scripts\python benchmark.py --audio talk.wav --text what-i-read.txt --models base,turbo,groq --lang en
+```
 
 ## Configuration
 
@@ -225,6 +244,9 @@ ui_kit.py       anti-aliased panels, icons and SVG paths drawn with Pillow (no i
 layered.py      per-pixel-alpha windows (UpdateLayeredWindow): clean edges, real fades
 mascots.py      sprite atlases, clippy.js character packs, GIFs – and the event → animation mapping
 voice.py        microphone capture and faster-whisper transcription
+transcribe.py   optional external speech service (OpenAI, Groq…) with local fallback
+benchmark.py    compare speech models on your own words (window or command line)
+scoring.py      word error rate and diff of a transcript against the text that was read
 core.py         optional Codex rewrite and usage reading
 settings.py     preferences, shortcut list, mascot discovery
 windows.py      hotkey, focus tracking, text insertion (SendInput), multi-monitor placement

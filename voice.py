@@ -24,6 +24,13 @@ def model_downloaded(name: str) -> bool:
     return any(MODEL_DIR.glob(f"models--*--faster-whisper-{HF_NAMES.get(name, name)}"))
 
 
+def local_transcribe(model: WhisperModel, audio: np.ndarray, language: str) -> str:
+    """Greedy decoding without timestamps: several times faster than the default beam search, plenty for dictation."""
+    segments, _ = model.transcribe(audio, language=language, beam_size=1, vad_filter=True,
+                                   condition_on_previous_text=False, without_timestamps=True)
+    return " ".join(segment.text.strip() for segment in segments).strip()
+
+
 class Recorder:
     """Records from the default microphone, then transcribes. `on_status` receives 'listening' or 'transcribing'."""
 
@@ -80,11 +87,7 @@ class Recorder:
         self._stop.set()
 
     def _local(self, audio: np.ndarray, language: str) -> str:
-        model = self._load_model()
-        # Greedy decoding without timestamps: several times faster than the default beam search, plenty for dictation.
-        segments, _ = model.transcribe(audio, language=language, beam_size=1, vad_filter=True,
-                                       condition_on_previous_text=False, without_timestamps=True)
-        return " ".join(segment.text.strip() for segment in segments).strip()
+        return local_transcribe(self._load_model(), audio, language)
 
     def _run(self, language: str) -> None:
         chunks: list[np.ndarray] = []
