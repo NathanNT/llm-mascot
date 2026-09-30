@@ -172,6 +172,29 @@ def _kill_with_us(process: subprocess.Popen) -> None:
 _JOBS: list = []
 
 
+_help_text: str | None = None
+
+
+def fast_flags() -> list[str]:
+    """Greedy decoding and no temperature fallback make dictation several times quicker; only flags this build knows are used."""
+    global _help_text
+    if _help_text is None:
+        try:
+            completed = subprocess.run([str(runtime_exe()), "--help"], capture_output=True, text=True, errors="replace", timeout=15,
+                                       creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            _help_text = completed.stdout + completed.stderr
+        except (OSError, subprocess.SubprocessError):
+            _help_text = ""
+    flags: list[str] = []
+    if "--beam-size" in _help_text:
+        flags += ["--beam-size", "1"]
+    if "--best-of" in _help_text:
+        flags += ["--best-of", "1"]
+    if "--no-fallback" in _help_text:
+        flags += ["--no-fallback"]
+    return flags
+
+
 class Server:
     """whisper-server.exe kept running with one model loaded on the GPU, so each dictation only pays for inference."""
 
@@ -197,7 +220,7 @@ class Server:
                 probe.bind(("127.0.0.1", 0))
                 self.port = probe.getsockname()[1]
             self.process = subprocess.Popen(
-                [str(runtime_exe()), "-m", str(model_path(model)), "--host", "127.0.0.1", "--port", str(self.port), "-t", "4"],
+                [str(runtime_exe()), "-m", str(model_path(model)), "--host", "127.0.0.1", "--port", str(self.port), "-t", "4", *fast_flags()],
                 cwd=str(RUNTIME_DIR), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
             try:
@@ -222,7 +245,8 @@ class Server:
         try:
             response = requests.post(f"http://127.0.0.1:{self.port}/inference",
                                      files={"file": ("dictation.wav", transcribe.wav_bytes(audio), "audio/wav")},
-                                     data={"response_format": "json", "language": language, "temperature": "0.0"}, timeout=(5, 90))
+                                     data={"response_format": "json", "language": language, "temperature": "0.0", "temperature_inc": "0.0"},
+                                     timeout=(5, 90))
             response.raise_for_status()
             return str(response.json().get("text", "")).strip()
         except (requests.RequestException, ValueError) as exc:

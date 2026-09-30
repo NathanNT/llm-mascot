@@ -346,9 +346,9 @@ class Window:
                         font=(rover.FONT_SEMIBOLD, 9))
         style.map("Bench.Treeview.Heading", background=[("active", theme["card"])])
         columns = ("model", "wer", "time", "speed", "errors")
-        self.table = ttk.Treeview(inner, columns=columns, show="headings", height=8, style="Bench.Treeview", selectmode="browse")
-        for key, caption, width, anchor in (("model", tr("Model"), 170, "w"), ("wer", tr("Word errors"), 100, "e"), ("time", tr("Time"), 70, "e"),
-                                            ("speed", tr("× real time"), 100, "e"), ("errors", tr("Sub / del / ins"), 150, "e")):
+        self.table = ttk.Treeview(inner, columns=columns, show="headings", height=6, style="Bench.Treeview", selectmode="browse")
+        for key, caption, width, anchor in (("model", tr("Model"), 150, "w"), ("wer", tr("Word errors"), 100, "e"), ("time", tr("Wait"), 65, "e"),
+                                            ("speed", tr("× real time"), 95, "e"), ("errors", tr("Sub / del / ins"), 140, "e")):
             self.table.heading(key, text=caption, anchor=anchor)
             self.table.column(key, width=width, anchor=anchor, stretch=False)
         self.table.pack(fill="x", pady=(8, 6))
@@ -356,7 +356,7 @@ class Window:
         self.summary = tk.Label(inner, text=tr("Run the benchmark to see which model to keep."), bg=theme["card"], fg=theme["sec"],
                                 font=(rover.FONT_REGULAR, 9), anchor="w", justify="left", wraplength=560)
         self.summary.pack(fill="x")
-        self.detail = tk.Text(inner, width=70, height=13, wrap="word", relief="flat", bg=theme["panel"], fg=theme["text"], highlightthickness=1,
+        self.detail = tk.Text(inner, width=70, height=16, wrap="word", relief="flat", bg=theme["panel"], fg=theme["text"], highlightthickness=1,
                               highlightbackground=theme["border"], font=(rover.FONT_REGULAR, 10), padx=8, pady=6, state="disabled")
         self.detail.tag_configure("bad", foreground=theme["err"], font=(rover.FONT_SEMIBOLD, 10))
         self.detail.tag_configure("expected", foreground=theme["err"], font=(rover.FONT_REGULAR, 8))
@@ -477,8 +477,11 @@ class Window:
             self.table.move(result["id"], "", position)
         pick = scoring.recommend([{"name": r["name"], "wer": r["wer"], "seconds": r["seconds"]} for r in self.results.values()])
         if pick:
-            self.summary.configure(text=tr("Most accurate: {a}   ·   Fastest: {s}   ·   Best balance: {b} (the fastest within 2 points of the best)")
-                                   .format(a=pick["accuracy"], s=pick["speed"], b=pick["balanced"]), fg=self.theme["text"])
+            lines = [tr("Most accurate: {a}   ·   Fastest: {s}   ·   Best balance: {b} (the fastest within 2 points of the best)")
+                     .format(a=pick["accuracy"], s=pick["speed"], b=pick["balanced"])]
+            lines.append(tr("Best answer in under 2 s: {m}").format(m=pick["snappy"]) if "snappy" in pick
+                         else tr("No model answered in under 2 s: try a smaller model, the GPU or a service."))
+            self.summary.configure(text="\n".join(lines), fg=self.theme["text"])
         self.status.configure(text=tr("Done."), fg=self.theme["ok"])
         if ordered:
             self.table.selection_set(ordered[0]["id"])
@@ -512,6 +515,11 @@ class Window:
             if missed:
                 box.insert("end", "\n\n" + tr("Missed or wrong") + ": ", "dim")
                 box.insert("end", ", ".join(dict.fromkeys(missed)))
+            total = len(self.audio) / SAMPLE_RATE
+            wait = result["seconds"]
+            verdict = (tr("feels instant") if wait < 1 else tr("quick") if wait <= 2.5 else tr("noticeable pause") if wait <= 5 else tr("slow"))
+            box.insert("end", "\n\n" + tr("Wait after you stop speaking: {wait} s ({verdict}) for {speech} s of speech, {speed}× real time.")
+                       .format(wait=f"{wait:.1f}", verdict=verdict, speech=f"{total:.0f}", speed=f"{total / wait:.1f}"), "dim")
             if result["load"] > 0.5:
                 box.insert("end", "\n\n" + tr("Model load time (not counted above): {seconds} s").format(seconds=f"{result['load']:.1f}"), "dim")
         box.configure(state="disabled")

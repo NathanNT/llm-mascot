@@ -7,6 +7,14 @@ import ctypes
 LANG = "en"
 
 FR = {
+    "Wait": "Attente",
+    "Best answer in under 2 s: {m}": "Meilleure réponse en moins de 2 s : {m}",
+    "No model answered in under 2 s: try a smaller model, the GPU or a service.": "Aucun modèle n’a répondu en moins de 2 s : essayez un modèle plus petit, le GPU ou un service.",
+    "feels instant": "quasi instantané",
+    "quick": "rapide",
+    "noticeable pause": "pause perceptible",
+    "slow": "lent",
+    "Wait after you stop speaking: {wait} s ({verdict}) for {speech} s of speech, {speed}× real time.": "Attente après la fin de la parole : {wait} s ({verdict}) pour {speech} s de parole, soit {speed}× le temps réel.",
     "CPU": "Processeur",
     "No graphics card found": "Aucune carte graphique trouvée",
     "Graphics driver with Vulkan support": "Pilote graphique compatible Vulkan",
@@ -58,7 +66,7 @@ FR = {
     "Word errors": "Mots erronés",
     "Time": "Temps",
     "× real time": "× temps réel",
-    "Sub / del / ins": "Subst. / suppr. / ajouts",
+    "Sub / del / ins": "Sub. / sup. / ajouts",
     "Run the benchmark to see which model to keep.": "Lancez le benchmark pour voir quel modèle garder.",
     "Loaded {seconds} s of audio": "{seconds} s d’audio chargées",
     "Recorded {seconds} s": "{seconds} s enregistrées",

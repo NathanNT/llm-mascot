@@ -43,5 +43,8 @@ def test_recommendation_prefers_the_fastest_model_close_to_the_best():
                {"name": "small", "wer": 0.05, "seconds": 3.0}, {"name": "large", "wer": 0.04, "seconds": 12.0},
                {"name": "broken", "wer": None, "seconds": None}]
     pick = scoring.recommend(results)
-    assert pick == {"accuracy": "large", "speed": "tiny", "balanced": "base"}
+    assert pick == {"accuracy": "large", "speed": "tiny", "balanced": "base", "snappy": "base"}
+    slow_only = scoring.recommend([{"name": "turbo", "wer": 0.1, "seconds": 7.0}])
+    assert "snappy" not in slow_only and slow_only["accuracy"] == "turbo"
+    assert scoring.recommend(results, snappy_seconds=0.6)["snappy"] == "tiny"
     assert scoring.recommend([]) == {}

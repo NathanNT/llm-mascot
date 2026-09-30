@@ -74,12 +74,17 @@ def score(reference: str, hypothesis: str, strip_accents: bool = False) -> Score
                  sum(op == "ins" for op, *_ in ops), ops)
 
 
-def recommend(results: list[dict], tolerance: float = 0.02) -> dict:
-    """Pick the most accurate, the fastest, and the fastest one that is within `tolerance` of the most accurate."""
+def recommend(results: list[dict], tolerance: float = 0.02, snappy_seconds: float = 2.0) -> dict:
+    """Pick the most accurate, the fastest, the fastest within `tolerance` of the most accurate,
+    and the most accurate one that still answers within `snappy_seconds` ('snappy', absent when none does)."""
     valid = [r for r in results if r.get("wer") is not None and r.get("seconds") is not None]
     if not valid:
         return {}
     best = min(valid, key=lambda r: (r["wer"], r["seconds"]))
     fastest = min(valid, key=lambda r: (r["seconds"], r["wer"]))
     balanced = min((r for r in valid if r["wer"] <= best["wer"] + tolerance), key=lambda r: r["seconds"])
-    return {"accuracy": best["name"], "speed": fastest["name"], "balanced": balanced["name"]}
+    quick = [r for r in valid if r["seconds"] <= snappy_seconds]
+    picks = {"accuracy": best["name"], "speed": fastest["name"], "balanced": balanced["name"]}
+    if quick:
+        picks["snappy"] = min(quick, key=lambda r: (r["wer"], r["seconds"]))["name"]
+    return picks
