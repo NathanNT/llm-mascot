@@ -31,6 +31,12 @@ class Recorder:
         self._model: WhisperModel | None = None
         self.level = 0.0  # live microphone peak (0..1) for the recording meter
 
+    def set_model(self, name: str) -> None:
+        """Use another Whisper model from the next dictation on (it is downloaded the first time it is needed)."""
+        if name != self.model_name:
+            self.model_name = name
+            self._model = None
+
     @property
     def recording(self) -> bool:
         return self._thread is not None and self._thread.is_alive() and not self._stop.is_set()

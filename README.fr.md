@@ -28,7 +28,7 @@ Parlez-lui : elle transcrit sur votre PC, reformule au besoin avec Codex, puis d
 |---|---|
 | **Dictée partout** | Cliquez sur la mascotte ou appuyez sur **Ctrl+Alt+R**, parlez, recliquez. Français et anglais, transcription **locale** avec [faster-whisper](https://github.com/SYSTRAN/faster-whisper). |
 | **Inséré, jamais envoyé** | Le texte est tapé dans le champ qui avait le focus (ni presse-papiers, ni touche Entrée). Si vous avez changé de fenêtre, un bouton permet de l'insérer plus tard. |
-| **Reformulation Codex optionnelle** | Avec le CLI Codex connecté, la transcription brute devient un prompt propre. Sans lui, le texte brut est inséré. |
+| **Reformulation optionnelle, à votre style** | Codex ou Claude peuvent mettre au propre, corriger, raccourcir, étoffer ou restructurer ce que vous avez dit, avec un style prédéfini ou votre propre consigne. Sans l'un ni l'autre, le texte brut est inséré. |
 | **Consommation d'un coup d'œil** | Survolez la jauge : fenêtres d'usage Codex, échéances, crédits. Pour Claude, un lien vers sa page de consommation — aucun chiffre inventé. |
 | **Rail de raccourcis IA** | Des boutons ronds pour Claude, ChatGPT et **tout ce que vous ajoutez** : un site, une appli web locale, un programme, un dossier. Les icônes sont récupérées automatiquement. |
 | **Une vraie personnalité** | Neuf réactions par mascotte : elle salue à votre arrivée, écoute pendant que vous parlez, lit pendant qu'elle réfléchit, saute en cas de succès, s'effondre en cas d'erreur et court quand on la déplace. |
@@ -130,6 +130,27 @@ Sombre par défaut, avec un thème clair chaleureux :<br>
 <img src="docs/img/en-light/hero.png" alt="Light theme" width="240">
 </div>
 
+## Paramètres avancés
+
+*Personnalisation → Paramètres avancés* regroupe les options qui changent le comportement de la dictée.
+
+<div align="center">
+<img src="docs/img/fr/advanced.png" alt="La page des paramètres avancés" width="720">
+</div>
+
+| Réglage | Effet |
+|---|---|
+| **Lancer au démarrage de Windows** | Démarre la mascotte à l'ouverture de votre session (une entrée par utilisateur, sans droits administrateur). Appliqué en appuyant sur *Enregistrer*. |
+| **Quand le texte est prêt** | *Le taper dans le champ* (par défaut) ou *Copier seulement* dans le presse-papiers. |
+| **Reconnaissance vocale** | Choisissez le modèle Whisper qui tourne sur votre PC : de `tiny` (≈75 Mo, le plus rapide) à `large-v3` (≈3 Go, le plus précis). Un modèle se télécharge une seule fois, à sa première utilisation. |
+| **Reformuler avec** | *Automatique* (Codex s'il est disponible, sinon Claude), *Codex*, *Claude*, ou *Non* pour toujours insérer la transcription brute. |
+| **Modèle Codex / Claude** | Le modèle utilisé par chaque outil. Vide = le modèle par défaut de l'outil ; pour Claude, vous pouvez saisir un alias comme `sonnet`, `opus` ou `haiku`, ou un nom complet. |
+| **Style de transcription** | La consigne d'édition envoyée avec votre dictée. Choisissez un style prédéfini ou écrivez le vôtre. |
+
+Les styles : **Mise au propre** (hésitations et ponctuation, vos propres mots), **Correction** (orthographe et syntaxe seulement, rien d'autre ne change), **Court et simple**, **Étoffé** (explicite l'implicite, n'invente rien), **Prompt structuré** (objectif, contexte, contraintes, résultat attendu), **Liste à puces**, **Ton professionnel**, **Ton décontracté** et **Personnalisé**. Modifiez le texte d'un style prédéfini et il devient *Personnalisé*.
+
+Claude est utilisé via [Claude Code](https://docs.claude.com/en/docs/claude-code) en mode impression, avec tous les outils désactivés et sans session enregistrée : il ne fait que reformuler du texte.
+
 ## Configuration
 
 Tout ce que vous changez dans la fenêtre de réglages est enregistré dans `settings.json` (à côté de `rover.py`, jamais versionné). Quelques options avancées n'existent que dans le fichier :
@@ -141,8 +162,11 @@ Tout ce que vous changez dans la fenêtre de réglages est enregistré dans `set
   "insert": "type",             // "type" tape au niveau du curseur ; "copy" met seulement le texte dans le presse-papiers (Ctrl+V)
   "whisper_model": "base",      // "tiny", "base", "small", "medium"… plus gros = plus précis, plus lent
   "quotas_url": "",             // service de consommation optionnel, voir plus bas
+  "rewrite_provider": "auto",   // "auto", "codex", "claude" ou "off" (insère la transcription brute)
+  "rewrite_style": "faithful",  // l'identifiant d'un style, ou "custom" pour utiliser "rewrite_prompt"
+  "rewrite_prompt": "",
+  "claude": { "model": "" },    // vide = modèle par défaut ; "sonnet", "opus", "haiku" ou un nom complet
   "codex": {
-    "rewrite": "auto",          // "auto" utilise Codex s'il est disponible, "off" insère toujours le texte brut
     "home": "",                 // dossier du profil Codex, par défaut %CODEX_HOME% ou ~/.codex
     "model": "",                // vide = modèle par défaut de Codex
     "reasoning": "low",         // minimal | low | medium | high
@@ -153,7 +177,7 @@ Tout ce que vous changez dans la fenêtre de réglages est enregistré dans `set
 
 ### Reformulation Codex (optionnelle)
 
-Si le [CLI Codex](https://github.com/openai/codex) est dans le `PATH` et connecté, la mascotte envoie la transcription à `codex exec` dans un bac à sable en lecture seule, sans outils, uniquement pour corriger hésitations et ponctuation. Chaque reformulation consomme un peu de quota Codex. Mettez `"rewrite": "off"` pour l'éviter.
+Si le [CLI Codex](https://github.com/openai/codex) est dans le `PATH` et connecté, la mascotte envoie la transcription à `codex exec` dans un bac à sable en lecture seule, sans outils, uniquement pour corriger hésitations et ponctuation. Chaque reformulation consomme un peu de quota Codex. Choisissez *Non* sous *Reformuler avec* (ou `"rewrite_provider": "off"`) pour l'éviter.
 
 ### Panneau de consommation (optionnel)
 

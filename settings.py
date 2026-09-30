@@ -16,6 +16,15 @@ BLOUB_URL = "https://bloub.vercel.app/"
 
 MAX_APPS = 8
 SIZE_MIN, SIZE_MAX, SIZE_STEP = 48, 192, 8
+WHISPER_MODELS = (   # (name, download size, character) – the speech model runs on your PC
+    ("tiny", "≈75 MB", "Fastest, basic accuracy"),
+    ("base", "≈145 MB", "Fast, good for clear speech"),
+    ("small", "≈480 MB", "Balanced, noticeably better"),
+    ("turbo", "≈800 MB", "Near-best accuracy, still quick"),
+    ("medium", "≈1.5 GB", "Accurate, slower on a CPU"),
+    ("large-v3", "≈3 GB", "Best accuracy, heavy"),
+)
+REWRITE_PROVIDERS = ("auto", "codex", "claude", "off")
 SIZE_PRESETS = (("Small", 64), ("Medium", 96), ("Large", 128), ("Extra large", 160))
 IMAGE_SUFFIXES = (".png", ".gif", ".webp")
 
@@ -34,8 +43,13 @@ DEFAULTS: dict = {
     "apps": DEFAULT_APPS,
     "whisper_model": "base",
     "insert": "type",       # "type" types at the caret, "copy" only puts the text on the clipboard
+    "rewrite_provider": "auto",   # "auto", "codex", "claude" or "off" (insert the raw transcript)
+    "rewrite_style": "faithful",  # a preset id from styles.py, or "custom"
+    "rewrite_prompt": "",         # your own editing instruction, used when the style is "custom"
+    "startup": None,              # start with Windows; None = not decided in this session
     "quotas_url": "",       # optional local JSON service; see README
-    "codex": {"home": "", "model": "", "reasoning": "low", "auth_store": "", "rewrite": "auto"},
+    "codex": {"home": "", "model": "", "reasoning": "low", "auth_store": ""},
+    "claude": {"model": ""},
 }
 
 
@@ -63,6 +77,18 @@ def load() -> dict:
         data["side"] = "right"
     if isinstance(stored.get("codex"), dict):
         data["codex"].update({k: v for k, v in stored["codex"].items() if k in data["codex"] and isinstance(v, str)})
+        if stored["codex"].get("rewrite") == "off" and "rewrite_provider" not in stored:
+            data["rewrite_provider"] = "off"              # older files switched the rewrite off here
+    if isinstance(stored.get("claude"), dict) and isinstance(stored["claude"].get("model"), str):
+        data["claude"]["model"] = stored["claude"]["model"]
+    if stored.get("rewrite_provider") in REWRITE_PROVIDERS:
+        data["rewrite_provider"] = stored["rewrite_provider"]
+    for key in ("rewrite_style", "rewrite_prompt"):
+        if isinstance(stored.get(key), str):
+            data[key] = stored[key][:4000]
+    if isinstance(stored.get("startup"), bool):
+        data["startup"] = stored["startup"]
+
     for key in ("quotas_url", "whisper_model"):
         if isinstance(stored.get(key), str):
             data[key] = stored[key]
@@ -78,6 +104,8 @@ def load() -> dict:
 
 
 def _finish(data: dict) -> dict:
+    if data["whisper_model"] not in [name for name, _, _ in WHISPER_MODELS]:
+        data["whisper_model"] = "base"
     if data["language"] == "auto":
         data["language"] = system_language()
     return data

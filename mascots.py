@@ -98,8 +98,11 @@ def dot_set(diameter: int, color: tuple[int, int, int, int]) -> MascotSet:
     return static_set([image.resize((diameter, diameter), Image.Resampling.LANCZOS)], 1000)
 
 
+ATLAS_HEIGHTS = (9 * CELL_H, 11 * CELL_H)      # the Codex pets add two extra rows below the nine we use
+
+
 def is_atlas(image: Image.Image) -> bool:
-    return image.size == (ATLAS_COLS * CELL_W, 9 * CELL_H)
+    return image.width == ATLAS_COLS * CELL_W and image.height in ATLAS_HEIGHTS
 
 
 def file_set(path: Path, size: int, box_h: int) -> MascotSet:
@@ -126,7 +129,7 @@ def rover_set(path: Path, size: int, box_h: int) -> MascotSet:
     clips = {}
     for name, (row, count, delay) in ATLAS_CLIPS.items():
         frames = []
-        for column in range(min(count, ATLAS_COLS)):
+        for column in range(ATLAS_COLS):          # every non-empty cell of the row, whatever its length
             cell = sheet.crop((column * CELL_W, row * CELL_H, (column + 1) * CELL_W, (row + 1) * CELL_H))
             if cell.getchannel("A").getbbox():
                 frames.append(cell.resize((size, box_h), Image.Resampling.LANCZOS))

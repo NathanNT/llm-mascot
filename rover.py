@@ -22,9 +22,12 @@ from PIL import Image, ImageDraw, ImageSequence, ImageTk
 
 import appicons
 import layered
+import startup
+import styles
 import mascots
 import settings as prefs
-from core import CLAUDE_USAGE_URL, format_credits, format_reset, read_quotas, rewrite_enabled, rewrite_with_codex
+from core import (CLAUDE_USAGE_URL, claude_available, codex_available, format_credits, format_reset, provider_label,
+                  read_quotas, rewrite_enabled, rewrite_text)
 from ui_kit import (CLAUDE_COLOR, FONT_MONO, FONT_REGULAR, FONT_SEMIBOLD, SS, THEMES, TRANSPARENT, circle_button,
                     harden_edges, icon, icon_pil, letter_icon, panel_image, rail_image, rounded_box, rgb)
 from voice import Recorder
@@ -721,7 +724,7 @@ class RoverApp:
 
     def transcription_ready(self, transcript: str, language: str):
         self.last_transcript, self.last_language = transcript, language
-        if not rewrite_enabled(self.prefs["codex"]):
+        if not rewrite_enabled(self.prefs):
             self.root.after(0, lambda: self.complete_rewrite(transcript))
             return
         self.step = "codex"
@@ -730,7 +733,7 @@ class RoverApp:
 
     def rewrite_worker(self, transcript: str, language: str):
         try:
-            revised = rewrite_with_codex(transcript, language, self.prefs["codex"])
+            revised = rewrite_text(transcript, language, self.prefs)
             self.root.after(0, lambda: self.complete_rewrite(revised))
         except Exception as exc:
             self.thread_error(str(exc))
@@ -1130,7 +1133,8 @@ class RoverApp:
             message = self.notice or tr("Click the mascot or use the shortcut, then speak. The text is inserted into the active field and never sent.")
             tk.Label(inner, text=message, bg=bg, fg=theme["sec"], font=(FONT_REGULAR, 9), wraplength=width,
                      justify="left").pack(anchor="w")
-            tk.Label(inner, text=tr("Local Whisper  ·  Codex rewrite"), bg=bg, fg=theme["sec"],
+            tk.Label(inner, text=(tr("Local Whisper  ·  {tool} rewrite").format(tool=provider_label(self.prefs))
+                                  if rewrite_enabled(self.prefs) else tr("Local Whisper  ·  no rewrite")), bg=bg, fg=theme["sec"],
                      font=(FONT_REGULAR, 8)).pack(anchor="w", pady=(8, 0))
         elif state == "recording":
             top = tk.Frame(inner, bg=bg)
@@ -1146,7 +1150,7 @@ class RoverApp:
         elif state == "processing":
             done = self.step == "codex"
             self.step_row(inner, tr("Local transcription (Whisper)"), done=done, spinner=not done)
-            self.step_row(inner, tr("Rewriting (Codex)…"), done=False, spinner=done, dim=not done)
+            self.step_row(inner, tr("Rewriting ({tool})…").format(tool=provider_label(self.prefs) or "…"), done=False, spinner=done, dim=not done)
         elif state == "text":
             tk.Label(inner, text=tr("Text ready to insert"), bg=bg, fg=theme["ok"], font=(FONT_SEMIBOLD, 9)).pack(anchor="w")
             preview = self.pending_text if len(self.pending_text) <= 200 else self.pending_text[:197] + "…"
@@ -1349,6 +1353,11 @@ class RoverApp:
             return
         self.settings_window = SettingsWindow(self)
 
+    def apply_advanced(self) -> None:
+        """Settings that need no redraw: the speech model takes effect at the next dictation."""
+        self.recorder.set_model(self.prefs["whisper_model"])
+        self.language = self.prefs["language"]
+
     def update_pref(self, **changes) -> None:
         self.prefs.update(changes)
         if "ui_language" in changes:
@@ -1424,6 +1433,8 @@ class SettingsWindow:
         self.images: list = []
         self.preview_images: list = []
         self.placed = False
+        self.page = "main"
+        self.refreshers: list = []
         self.build()
         self.center()
         self.top.focus_force()
@@ -1448,22 +1459,34 @@ class SettingsWindow:
         # Unsaved live changes are reverted to what was last saved.
         app = self.app
         if app.prefs != app.saved_prefs:
-            app.prefs = {**app.saved_prefs, "apps": list(app.saved_prefs["apps"])}
+            app.prefs = json.loads(json.dumps(app.saved_prefs))
             app.language = app.prefs["language"]
             app.apply_look()
+            app.apply_advanced()
         self.top.destroy()
 
     def save(self):
         app = self.app
-        app.saved_prefs = {**app.prefs, "apps": list(app.prefs["apps"])}
+        app.saved_prefs = json.loads(json.dumps(app.prefs))
         prefs.save(app.saved_prefs)
+        if app.prefs.get("startup") is not None:
+            try:
+                startup.set_enabled(bool(app.prefs["startup"]))
+            except OSError as exc:
+                app.log_exception(type(exc), exc, exc.__traceback__)
+        app.apply_advanced()
         self.top.destroy()
 
     def reset(self):
         defaults = prefs.DEFAULTS
-        self.app.prefs = {**{k: v for k, v in defaults.items() if k != "apps"}, "apps": list(self.app.prefs["apps"]),
-                          "language": self.app.prefs["language"]}
+        fresh = json.loads(json.dumps(defaults))
+        fresh.update({"apps": list(self.app.prefs["apps"]), "language": self.app.prefs["language"],
+                      "codex": {**fresh["codex"], "home": self.app.prefs["codex"].get("home", ""),
+                                "auth_store": self.app.prefs["codex"].get("auth_store", "")},
+                      "quotas_url": self.app.prefs["quotas_url"]})
+        self.app.prefs = fresh
         self.app.apply_look()
+        self.app.apply_advanced()
         self.build()
 
     def set(self, **changes):
@@ -1482,21 +1505,29 @@ class SettingsWindow:
         self.tile_holders: dict[str, tk.Frame] = {}
         self.toggles: dict[tuple[str, str], tk.Button] = {}
         self.preset_buttons: list[tuple[int, tk.Button]] = []
+        self.refreshers = []
         body, _ = make_chrome(self.top, app, "LLM Mascot", self.close)
         outer = tk.Frame(body, bg=theme["desk"], padx=28, pady=10)
         outer.pack()
+        advanced = self.page == "advanced"
 
         header = tk.Frame(outer, bg=theme["desk"])
         header.pack(fill="x")
         titles = tk.Frame(header, bg=theme["desk"])
         titles.pack(side="left")
         tk.Label(titles, text=tr("SETTINGS"), bg=theme["desk"], fg=theme["sec"], font=(FONT_SEMIBOLD, 8)).pack(anchor="w")
-        tk.Label(titles, text=tr("Customization"), bg=theme["desk"], fg=theme["text"], font=(FONT_SEMIBOLD, 20)).pack(anchor="w")
+        tk.Label(titles, text=tr("Advanced settings") if advanced else tr("Customization"), bg=theme["desk"], fg=theme["text"],
+                 font=(FONT_SEMIBOLD, 20)).pack(anchor="w")
         actions = tk.Frame(header, bg=theme["desk"])
         actions.pack(side="right")
+        button(actions, theme, tr("← Back") if advanced else tr("Advanced settings →"), self.toggle_page).pack(side="left", padx=(0, 8))
         button(actions, theme, tr("Reset"), self.reset).pack(side="left", padx=(0, 8))
         button(actions, theme, tr("Save"), self.save, primary=True).pack(side="left")
 
+        if advanced:
+            self.build_advanced(outer)
+            self.finish_build()
+            return
         columns = tk.Frame(outer, bg=theme["desk"])
         columns.pack(pady=(18, 4))
         preview = tk.Frame(columns, bg=theme["desk"])
@@ -1511,10 +1542,223 @@ class SettingsWindow:
         self.section(right, tr("Mascot"), self.fill_mascots).pack(pady=(0, 12))
         self.section(right, tr("Size"), self.fill_size).pack()
         self.sync()
+        self.finish_build()
+
+    def finish_build(self):
         if self.placed:
             x, y = self.top.winfo_x(), self.top.winfo_y()
             self.top.update_idletasks()
             place_window(self.top, x, y, self.top.winfo_reqwidth(), self.top.winfo_reqheight())
+
+    def toggle_page(self):
+        self.page = "main" if self.page == "advanced" else "advanced"
+        self.build()
+
+    # ------------------------------------------------------------------ advanced page
+
+    def build_advanced(self, outer):
+        theme = self.app.theme
+        columns = tk.Frame(outer, bg=theme["desk"])
+        columns.pack(pady=(18, 4))
+        left = tk.Frame(columns, bg=theme["desk"])
+        left.pack(side="left", padx=(0, 18), anchor="n")
+        right = tk.Frame(columns, bg=theme["desk"])
+        right.pack(side="left", anchor="n")
+        self.section(left, tr("General"), self.fill_general, width=440).pack(pady=(0, 12))
+        self.section(left, tr("Speech recognition"), self.fill_speech, width=440).pack(pady=(0, 12))
+        self.section(left, tr("Text rewriting"), self.fill_rewrite, width=440).pack()
+        self.section(right, tr("Transcription style"), self.fill_style, width=440).pack()
+        self.refresh_advanced()
+
+    def refresh_advanced(self):
+        for refresh in self.refreshers:
+            refresh()
+
+    def startup_enabled(self) -> bool:
+        value = self.app.prefs.get("startup")
+        if value is None:
+            if not hasattr(self.app, "startup_actual"):
+                self.app.startup_actual = startup.is_enabled()
+            return self.app.startup_actual
+        return bool(value)
+
+    def choice(self, parent, options, getter, setter, pady=(10, 0), label=None, label_width=None):
+        """A label on the left and a row of exclusive buttons on the right; updates in place."""
+        theme = self.app.theme
+        bg = theme["card"]
+        row = tk.Frame(parent, bg=bg)
+        row.pack(fill="x", pady=pady)
+        if label:
+            tk.Label(row, text=label, bg=bg, fg=theme["text"], font=(FONT_REGULAR, 10)).pack(side="left")
+        buttons = []
+        for caption, value in reversed(options):
+            widget = tk.Button(row, text=caption, relief="flat", bd=0, highlightthickness=1, font=(FONT_SEMIBOLD, 9),
+                               padx=11, pady=4, cursor="hand2")
+            widget.configure(command=lambda v=value: (setter(v), self.refresh_advanced()))
+            widget.pack(side="right", padx=(6, 0))
+            buttons.append((value, widget))
+
+        def refresh():
+            current = getter()
+            for value, widget in buttons:
+                restyle_toggle(widget, theme, current == value, bg)
+
+        self.refreshers.append(refresh)
+        return row
+
+    def entry(self, parent, initial: str, on_change, width: int = 26):
+        theme = self.app.theme
+        variable = tk.StringVar(value=initial)
+        field = tk.Entry(parent, textvariable=variable, width=width, relief="flat", bg=theme["panel"], fg=theme["text"],
+                         insertbackground=theme["text"], highlightthickness=1, highlightbackground=theme["border"],
+                         highlightcolor=theme["accent"], font=(FONT_MONO, 9))
+        field.bind("<Button-1>", lambda event: field.focus_force())
+        variable.trace_add("write", lambda *_: on_change(variable.get().strip()))
+        return field, variable
+
+    def fill_general(self, inner):
+        app = self.app
+        self.choice(inner, ((tr("On"), "on"), (tr("Off"), "off")), lambda: "on" if self.startup_enabled() else "off",
+                    lambda v: app.prefs.__setitem__("startup", v == "on"), label=tr("Launch at Windows startup"))
+        self.choice(inner, ((tr("Type into the field"), "type"), (tr("Copy only"), "copy")), lambda: app.prefs["insert"],
+                    lambda v: app.prefs.__setitem__("insert", v), label=tr("When the text is ready"))
+        self.choice(inner, (("Français", "fr"), ("English", "en")), lambda: app.prefs["language"],
+                    lambda v: (app.prefs.__setitem__("language", v), app.apply_advanced()), label=tr("Dictation language"))
+
+    def fill_speech(self, inner):
+        app, theme = self.app, self.app.theme
+        bg = theme["card"]
+        grid = tk.Frame(inner, bg=bg)
+        grid.pack(fill="x", pady=(10, 0))
+        holders = {}
+        for index, (name, size, hint) in enumerate(prefs.WHISPER_MODELS):
+            holder = tk.Frame(grid, bg=theme["border"], padx=2, pady=2)
+            cell = tk.Frame(holder, bg=theme["panel"], cursor="hand2")
+            cell.pack(fill="both", expand=True)
+            tk.Label(cell, text=name, bg=theme["panel"], fg=theme["text"], font=(FONT_SEMIBOLD, 10), cursor="hand2").pack(anchor="w", padx=8, pady=(6, 0))
+            tk.Label(cell, text=size, bg=theme["panel"], fg=theme["accent"], font=(FONT_MONO, 8), cursor="hand2").pack(anchor="w", padx=8)
+            tk.Label(cell, text=tr(hint), bg=theme["panel"], fg=theme["sec"], font=(FONT_REGULAR, 8), wraplength=112, justify="left",
+                     cursor="hand2").pack(anchor="w", padx=8, pady=(0, 7))
+            for widget in (holder, cell, *cell.winfo_children()):
+                widget.bind("<Button-1>", lambda event, n=name: (app.prefs.__setitem__("whisper_model", n), app.apply_advanced(),
+                                                              self.refresh_advanced()))
+            holder.grid(row=index // 3, column=index % 3, padx=(0, 8), pady=(0, 8), sticky="nsew")
+            holders[name] = holder
+        for column in range(3):
+            grid.grid_columnconfigure(column, uniform="speech", weight=1)
+
+        def refresh():
+            for name, holder in holders.items():
+                holder.configure(bg=theme["accent"] if app.prefs["whisper_model"] == name else theme["border"])
+
+        self.refreshers.append(refresh)
+        tk.Label(inner, text=tr("Runs on your PC. A model is downloaded once, the first time it is used."), bg=bg, fg=theme["sec"],
+                 font=(FONT_REGULAR, 8), wraplength=400, justify="left").pack(anchor="w", pady=(2, 0))
+
+    def fill_rewrite(self, inner):
+        app, theme = self.app, self.app.theme
+        bg = theme["card"]
+        self.choice(inner, ((tr("Automatic"), "auto"), ("Codex", "codex"), ("Claude", "claude"), (tr("Off"), "off")),
+                    lambda: app.prefs["rewrite_provider"], lambda v: app.prefs.__setitem__("rewrite_provider", v),
+                    label=tr("Rewrite with"))
+        status = tk.Label(inner, bg=bg, fg=theme["sec"], font=(FONT_REGULAR, 8), anchor="w", justify="left")
+        status.pack(fill="x", pady=(4, 0))
+
+        def refresh_status():
+            found = lambda ok: tr("found") if ok else tr("not found")
+            status.configure(text=f"Codex: {found(codex_available(app.prefs['codex']))}   ·   Claude: {found(claude_available())}")
+
+        self.refreshers.append(refresh_status)
+
+        def model_row(label: str, key: str, presets=()):
+            row = tk.Frame(inner, bg=bg)
+            row.pack(fill="x", pady=(10, 0))
+            tk.Label(row, text=label, bg=bg, fg=theme["text"], font=(FONT_REGULAR, 10)).pack(side="left")
+            field, variable = self.entry(row, app.prefs[key].get("model", ""), lambda v, k=key: app.prefs[k].__setitem__("model", v))
+            field.pack(side="right", ipady=3)
+            if presets:
+                chips = tk.Frame(inner, bg=bg)
+                chips.pack(fill="x", pady=(5, 0))
+                for caption, value in reversed(presets):
+                    chip = tk.Button(chips, text=caption, relief="flat", bd=0, highlightthickness=1, font=(FONT_SEMIBOLD, 8), padx=8, pady=2,
+                                     cursor="hand2", command=lambda v=value, var=variable: var.set(v))
+                    chip.pack(side="right", padx=(5, 0))
+                    restyle_toggle(chip, theme, False, bg)
+
+        model_row(tr("Codex model"), "codex")
+        self.choice(inner, ((tr("Low"), "low"), (tr("Medium"), "medium"), (tr("High"), "high")),
+                    lambda: app.prefs["codex"].get("reasoning") or "low", lambda v: app.prefs["codex"].__setitem__("reasoning", v),
+                    label=tr("Reasoning (Codex)"))
+        model_row(tr("Claude model"), "claude", ((tr("Default"), ""), ("sonnet", "sonnet"), ("opus", "opus"), ("haiku", "haiku")))
+        tk.Label(inner, text=tr("Leave empty for the tool's default model.") + " " +
+                 tr("Your dictation text is sent to the selected service to be rewritten."), bg=bg, fg=theme["sec"],
+                 font=(FONT_REGULAR, 8), wraplength=400, justify="left").pack(anchor="w", pady=(8, 0))
+
+    def fill_style(self, inner):
+        app, theme = self.app, self.app.theme
+        bg = theme["card"]
+        chips = tk.Frame(inner, bg=bg)
+        chips.pack(fill="x", pady=(10, 0))
+        buttons = {}
+        entries = [(item[0], tr(item[1])) for item in styles.STYLES] + [(styles.CUSTOM, tr("Custom"))]
+        description = tk.Label(inner, bg=bg, fg=theme["sec"], font=(FONT_REGULAR, 9), anchor="w", justify="left", wraplength=400)
+        box = tk.Text(inner, width=50, height=11, wrap="word", relief="flat", bg=theme["panel"], fg=theme["text"],
+                      insertbackground=theme["text"], highlightthickness=1, highlightbackground=theme["border"],
+                      highlightcolor=theme["accent"], font=(FONT_REGULAR, 10), padx=8, pady=6, undo=True)
+        loading = {"busy": False}
+
+        def load(text: str):
+            loading["busy"] = True
+            box.delete("1.0", "end")
+            box.insert("1.0", text)
+            loading["busy"] = False
+
+        def pick(style_id: str):
+            if style_id == styles.CUSTOM:
+                text = app.prefs["rewrite_prompt"].strip() or box.get("1.0", "end-1c")
+                app.prefs["rewrite_prompt"] = text
+            else:
+                text = styles.instruction(style_id)
+            app.prefs["rewrite_style"] = style_id
+            load(text)
+            self.refresh_advanced()
+
+        for index, (style_id, caption) in enumerate(entries):
+            chip = tk.Button(chips, text=caption, relief="flat", bd=0, highlightthickness=1, font=(FONT_SEMIBOLD, 9), padx=8, pady=5,
+                             cursor="hand2", command=lambda sid=style_id: pick(sid))
+            chip.grid(row=index // 3, column=index % 3, padx=(0, 6), pady=(0, 6), sticky="ew")
+            buttons[style_id] = chip
+        for column in range(3):
+            chips.grid_columnconfigure(column, uniform="chip", weight=1)
+        description.pack(fill="x", pady=(2, 8))
+        box.pack(fill="x")
+        box.bind("<Button-1>", lambda event: box.focus_force())
+
+        def edited(_event=None):
+            if loading["busy"]:
+                return
+            text = box.get("1.0", "end-1c")
+            if app.prefs["rewrite_style"] != styles.CUSTOM and text.strip() != styles.instruction(app.prefs["rewrite_style"]).strip():
+                app.prefs["rewrite_style"] = styles.CUSTOM
+            if app.prefs["rewrite_style"] == styles.CUSTOM:
+                app.prefs["rewrite_prompt"] = text
+            self.refresh_advanced()
+
+        box.bind("<KeyRelease>", edited)
+        box.bind("<<Paste>>", lambda event: box.after(10, edited))
+
+        def refresh():
+            current = app.prefs["rewrite_style"]
+            for style_id, chip in buttons.items():
+                restyle_toggle(chip, theme, current == style_id, bg)
+            found = styles.preset(current)
+            description.configure(text=tr(found[2]) if found else tr("Your own instruction"))
+
+        self.refreshers.append(refresh)
+        current = app.prefs["rewrite_style"]
+        load(app.prefs["rewrite_prompt"] if current == styles.CUSTOM else styles.instruction(current))
+        tk.Label(inner, text=tr("This instruction is sent to the model with your dictation. Edit it freely: the style switches to Custom."),
+                 bg=bg, fg=theme["sec"], font=(FONT_REGULAR, 8), wraplength=400, justify="left").pack(anchor="w", pady=(6, 0))
 
     def section(self, parent, title: str, fill, width: int = 470) -> tk.Canvas:
         theme = self.app.theme
@@ -1527,6 +1771,8 @@ class SettingsWindow:
     # ------------------------------------------------------------------ live sync
 
     def sync(self):
+        if self.page != "main":
+            return
         self.redraw_preview()
         for value, holder in self.tile_holders.items():
             holder.configure(bg=self.app.theme["accent"] if self.app.prefs["mascot"] == value else self.app.theme["border"])

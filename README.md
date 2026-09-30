@@ -28,7 +28,7 @@ Talk to it, it transcribes on your PC, optionally polishes the text with Codex, 
 |---|---|
 | **Dictation anywhere** | Click the mascot or press **Ctrl+Alt+R**, speak, click again. French and English, transcribed **locally** with [faster-whisper](https://github.com/SYSTRAN/faster-whisper). |
 | **Inserted, never sent** | The text is typed into the field that had focus (no clipboard, no Enter key). If you switched windows, a button lets you insert it later. |
-| **Optional Codex polish** | With the Codex CLI signed in, the raw transcript is rewritten into a clean prompt. Without it, the raw text is inserted. |
+| **Optional rewrite, your style** | Codex or Claude can clean up, proofread, shorten, expand or restructure what you said, using a preset style or your own instruction. Without either, the raw text is inserted. |
 | **Usage at a glance** | Hover the gauge to see Codex usage windows, reset times and credits. Claude shows a one-click link to its usage page — no invented numbers. |
 | **AI shortcut rail** | Round buttons for Claude, ChatGPT and **anything you add**: a website, a local web app, a program, a folder. Icons are fetched automatically. |
 | **Real personality** | Nine reactions per mascot: it waves when you arrive, listens while you talk, reads while it thinks, jumps on success, collapses on errors, runs while you drag it. |
@@ -89,7 +89,7 @@ The classic animated Windows assistants work out of the box, each with dozens of
   They receive the same events as every mascot (greeting, listening, processing, congratulation, alert…) and play their idle animations at random.
 - **A bundled fallback** – a simple original dog (nine reactions) so the app works before you download anything.
 - **Your own images** – PNG, GIF or WebP dropped in `mascots/` (or imported from the settings window). A 1536 × 1872 PNG laid out like the atlas below plays all nine reactions.
-- **Codex pets** – if the Codex extension is installed, its pets appear automatically in the settings window (they are read in place, never copied).
+- **Codex pets** – if the Codex extension is installed, its pets appear automatically in the settings window and play the same nine reactions (they are read in place, never copied).
 
 <details>
 <summary><b>Sprite atlas layout</b> (for creating your own mascot)</summary>
@@ -130,6 +130,27 @@ Dark by default, with a warm light theme:<br>
 <img src="docs/img/en-light/hero.png" alt="Light theme" width="240">
 </div>
 
+## Advanced settings
+
+*Customize → Advanced settings* groups the options that change how dictation behaves.
+
+<div align="center">
+<img src="docs/img/en/advanced.png" alt="The advanced settings page" width="720">
+</div>
+
+| Setting | What it does |
+|---|---|
+| **Launch at Windows startup** | Starts the mascot when you sign in (a per-user entry, no admin rights). Applied when you press *Save*. |
+| **When the text is ready** | *Type into the field* (default) or *Copy only* to the clipboard. |
+| **Speech recognition** | Pick the Whisper model that runs on your PC: from `tiny` (≈75 MB, fastest) to `large-v3` (≈3 GB, most accurate). A model is downloaded once, the first time it is used. |
+| **Rewrite with** | *Automatic* (Codex if available, else Claude), *Codex*, *Claude*, or *Off* to always insert the raw transcript. |
+| **Codex / Claude model** | The model each tool uses. Empty means the tool's own default; for Claude you can type an alias such as `sonnet`, `opus` or `haiku`, or a full model name. |
+| **Transcription style** | The editing instruction sent with your dictation. Choose a preset or write your own. |
+
+The styles: **Clean-up** (hesitations and punctuation, your own words), **Proofread** (spelling and grammar only, nothing else changes), **Short and simple**, **Detailed** (spells out what is implied, never invents), **Structured prompt** (goal, context, constraints, expected output), **Bullet points**, **Professional tone**, **Casual tone**, and **Custom**. Edit the text of any preset and it becomes *Custom*.
+
+Claude is used through [Claude Code](https://docs.claude.com/en/docs/claude-code) in print mode with every tool disabled and no saved session, so it only ever rewrites text.
+
 ## Configuration
 
 Everything you change in the settings window is saved to `settings.json` (next to `rover.py`, never committed). A few advanced options are only in the file:
@@ -141,8 +162,11 @@ Everything you change in the settings window is saved to `settings.json` (next t
   "insert": "type",             // "type" types at the caret; "copy" only puts the text on the clipboard (paste with Ctrl+V)
   "whisper_model": "base",      // "tiny", "base", "small", "medium"… bigger = more accurate, slower
   "quotas_url": "",             // optional usage service, see below
+  "rewrite_provider": "auto",   // "auto", "codex", "claude" or "off" (insert the raw transcript)
+  "rewrite_style": "faithful",  // a preset id, or "custom" to use "rewrite_prompt"
+  "rewrite_prompt": "",
+  "claude": { "model": "" },    // empty = Claude's default; "sonnet", "opus", "haiku" or a full model name
   "codex": {
-    "rewrite": "auto",          // "auto" uses Codex when available, "off" always inserts the raw transcript
     "home": "",                 // Codex profile folder, default %CODEX_HOME% or ~/.codex
     "model": "",                // empty = Codex default
     "reasoning": "low",         // minimal | low | medium | high
@@ -153,7 +177,7 @@ Everything you change in the settings window is saved to `settings.json` (next t
 
 ### Codex rewrite (optional)
 
-If the [Codex CLI](https://github.com/openai/codex) is on your `PATH` and signed in, Rover pipes the transcript through `codex exec` in a read-only sandbox with tools disabled, only to fix hesitations and punctuation. Each rewrite uses a little of your Codex quota. Set `"rewrite": "off"` to skip it.
+If the [Codex CLI](https://github.com/openai/codex) is on your `PATH` and signed in, Rover pipes the transcript through `codex exec` in a read-only sandbox with tools disabled, only to fix hesitations and punctuation. Each rewrite uses a little of your Codex quota. Choose *Off* under *Rewrite with* (or `"rewrite_provider": "off"`) to skip it.
 
 ### Usage panel (optional)
 

@@ -170,6 +170,10 @@ try:
     app.open_settings()
     pump(0.8)
     grab(window_rect(app.settings_window.top)).save(out / "settings.png")
+    app.settings_window.toggle_page()
+    app.settings_window.top.update()
+    pump(0.6)
+    grab(window_rect(app.settings_window.top)).save(out / "advanced.png")
     app.settings_window.close()
     pump(0.3)
 

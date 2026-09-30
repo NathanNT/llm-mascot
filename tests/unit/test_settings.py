@@ -16,7 +16,7 @@ def test_defaults_when_no_file_exists():
     assert data["mascot"] == "rover" and data["theme"] == "dark"
     assert data["language"] in ("fr", "en")
     assert [a["name"] for a in data["apps"]] == ["Claude", "ChatGPT"]
-    assert data["quotas_url"] == "" and data["codex"]["rewrite"] == "auto"
+    assert data["quotas_url"] == "" and data["rewrite_provider"] == "auto" and data["rewrite_style"] == "faithful"
 
 
 def test_round_trip_and_atomic_write(tmp_path):
@@ -71,3 +71,17 @@ def test_import_pack_requires_both_files(tmp_path):
     (folder / "map.png").write_bytes(b"x")
     assert settings.import_pack(str(folder)) == "pack:Pack"
     assert settings.pack_path("pack:Pack") is not None
+
+
+def test_advanced_settings_are_validated():
+    settings.SETTINGS_FILE.write_text(json.dumps({"whisper_model": "gigantic", "rewrite_provider": "gpt", "startup": "yes",
+                                                  "claude": {"model": "opus"}, "rewrite_style": "custom", "rewrite_prompt": "Be brief."}))
+    data = settings.load()
+    assert data["whisper_model"] == "base" and data["rewrite_provider"] == "auto" and data["startup"] is None
+    assert data["claude"]["model"] == "opus" and data["rewrite_prompt"] == "Be brief."
+
+
+def test_old_files_that_switched_the_rewrite_off_keep_it_off():
+    settings.SETTINGS_FILE.write_text(json.dumps({"codex": {"rewrite": "off", "model": "x"}}))
+    data = settings.load()
+    assert data["rewrite_provider"] == "off" and data["codex"]["model"] == "x"

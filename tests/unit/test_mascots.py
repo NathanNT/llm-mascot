@@ -79,3 +79,20 @@ def test_static_and_dot_sets():
     dot = mascots.dot_set(30, (240, 176, 74, 255))
     dot.crop_to_content()
     assert dot.size == (30, 30) and dot.find("hover") is None and dot.find("idle") == "idle"
+
+
+def test_codex_pet_atlases_with_eleven_rows_are_accepted(tmp_path):
+    sheet = Image.new("RGBA", (mascots.ATLAS_COLS * mascots.CELL_W, 11 * mascots.CELL_H), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(sheet)
+    for row in range(11):
+        for column in range(7 if row == 0 else 6):        # idle rows can be longer than six frames
+            x, y = column * mascots.CELL_W, row * mascots.CELL_H
+            draw.ellipse((x + 60, y + 60, x + 130, y + 150), fill="#c83")
+    path = tmp_path / "pet.png"
+    sheet.save(path)
+    assert mascots.is_atlas(Image.open(path))
+    mascot = mascots.rover_set(path, 96, 104)
+    assert len(mascot.clips["idle"].frames) == 7 and mascot.find("hover") and mascot.find("error")
+    with pytest.raises(ValueError):
+        Image.new("RGBA", (100, 100)).save(tmp_path / "small.png")
+        mascots.rover_set(tmp_path / "small.png", 96, 104)
