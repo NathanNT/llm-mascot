@@ -1,0 +1,74 @@
+name: Build the GPU speech runtime
+
+# Builds whisper.cpp from its public source with the Vulkan backend (AMD, NVIDIA and Intel GPUs) and publishes the
+# server as a release asset. The app downloads exactly this file and checks its SHA-256 (see runtime_manifest.json).
+# Trigger: push a tag named runtime-v<N>, or run the workflow by hand.
+
+on:
+  push:
+    tags: ["runtime-v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish to (for example runtime-v1)"
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  WHISPER_CPP_TAG: v1.9.4
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch whisper.cpp ${{ env.WHISPER_CPP_TAG }}
+        shell: pwsh
+        run: git clone --depth 1 --branch $env:WHISPER_CPP_TAG https://github.com/ggml-org/whisper.cpp.git whisper.cpp
+
+      - name: Install the Vulkan SDK (build time only)
+        shell: pwsh
+        run: |
+          $installer = Join-Path $env:RUNNER_TEMP "vulkan-sdk.exe"
+          curl.exe -fsSL -o $installer "https://sdk.lunarg.com/sdk/download/latest/windows/vulkan-sdk.exe"
+          Start-Process -FilePath $installer -ArgumentList "--accept-licenses","--default-answer","--confirm-command","install" -Wait
+          $sdk = (Get-ChildItem C:\VulkanSDK | Sort-Object Name -Descending | Select-Object -First 1).FullName
+          "VULKAN_SDK=$sdk" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          "$sdk\Bin" | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
+          Write-Host "Vulkan SDK at $sdk"
+
+      - name: Build whisper-server with Vulkan
+        shell: pwsh
+        run: |
+          cmake -S whisper.cpp -B build -A x64 -DGGML_VULKAN=ON -DBUILD_SHARED_LIBS=OFF -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_EXAMPLES=ON
+          cmake --build build --config Release --target whisper-server -j 4
+
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist/pack | Out-Null
+          $exe = Get-ChildItem build -Recurse -Filter whisper-server.exe | Select-Object -First 1
+          Copy-Item $exe.FullName dist/pack/whisper-server.exe
+          Copy-Item whisper.cpp/LICENSE dist/pack/LICENSE-whisper.cpp
+          "whisper.cpp $env:WHISPER_CPP_TAG, Vulkan backend, built by GitHub Actions from https://github.com/ggml-org/whisper.cpp" | Out-File dist/pack/BUILD.txt -Encoding utf8
+          Compress-Archive -Path dist/pack/* -DestinationPath dist/whisper-vulkan-win-x64.zip
+          $hash = (Get-FileHash dist/whisper-vulkan-win-x64.zip -Algorithm SHA256).Hash.ToLower()
+          "$hash  whisper-vulkan-win-x64.zip" | Out-File dist/whisper-vulkan-win-x64.zip.sha256 -Encoding ascii
+          Write-Host "sha256 $hash"
+
+      - name: Publish the release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = if ($env:GITHUB_REF_TYPE -eq "tag") { $env:GITHUB_REF_NAME } else { "${{ github.event.inputs.tag }}" }
+          $notes = "whisper.cpp $env:WHISPER_CPP_TAG with the Vulkan backend, built from source by GitHub Actions (see the workflow run). Used by LLM Mascot for GPU speech recognition; the app verifies the SHA-256 before running it."
+          gh release view $tag --repo $env:GITHUB_REPOSITORY 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag dist/whisper-vulkan-win-x64.zip dist/whisper-vulkan-win-x64.zip.sha256 --clobber --repo $env:GITHUB_REPOSITORY
+          } else {
+            gh release create $tag dist/whisper-vulkan-win-x64.zip dist/whisper-vulkan-win-x64.zip.sha256 --title "GPU speech runtime ($tag)" --notes $notes --repo $env:GITHUB_REPOSITORY
+          }
