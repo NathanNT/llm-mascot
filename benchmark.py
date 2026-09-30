@@ -72,6 +72,18 @@ def run_local(name: str, audio: np.ndarray, language: str) -> dict:
     return {"text": text, "seconds": time.perf_counter() - started, "load": load}
 
 
+def run_gpu(name: str, audio: np.ndarray, language: str) -> dict:
+    import accel
+
+    started = time.perf_counter()
+    accel.server.ensure(name)
+    load = time.perf_counter() - started
+    accel.server.transcribe(np.zeros(8000, dtype=np.float32), language, name)      # warm-up, not timed
+    started = time.perf_counter()
+    text = accel.server.transcribe(audio, language, name)
+    return {"text": text, "seconds": time.perf_counter() - started, "load": load}
+
+
 def run_remote(config: dict, audio: np.ndarray, language: str) -> dict:
     started = time.perf_counter()
     text = transcribe.transcribe_remote(audio, language, config)
@@ -87,6 +99,14 @@ def candidates(settings: dict) -> list[dict]:
         ready = model_downloaded(name)
         items.append({"id": name, "label": name, "kind": "local", "ready": ready,
                       "note": tr("installed") if ready else tr("to download {size}").format(size=size)})
+    import accel
+    import gpu
+
+    if accel.runtime_installed():
+        for name, (_file, megabytes) in accel.GGML_MODELS.items():
+            ready = accel.model_installed(name)
+            items.append({"id": f"gpu:{name}", "model": name, "label": f"{name} · GPU", "kind": "gpu", "ready": ready,
+                          "note": tr("installed") if ready else tr("to download {size}").format(size=f"≈{megabytes} MB")})
     saved = settings["transcription"]
     for engine, preset in transcribe.ENGINES.items():
         if engine == "custom" and saved.get("engine") != "custom":
@@ -107,7 +127,14 @@ def benchmark(items: list[dict], audio: np.ndarray, language: str, reference: st
 
     def one(item):
         try:
-            outcome = run_local(item["id"], audio, language) if item["kind"] == "local" else run_remote(item["config"], audio, language)
+            if item["kind"] == "local":
+                outcome = run_local(item["id"], audio, language)
+            elif item["kind"] == "gpu":
+                if not accel_ready(item["model"]):
+                    accel_fetch(item["model"])
+                outcome = run_gpu(item["model"], audio, language)
+            else:
+                outcome = run_remote(item["config"], audio, language)
             graded = scoring.score(reference, outcome["text"], strip_accents)
             result = {"name": item["label"], "id": item["id"], **outcome, "wer": graded.wer, "score": graded, "error": ""}
         except Exception as exc:                   # a missing download, a rejected key… must not stop the others
@@ -117,7 +144,7 @@ def benchmark(items: list[dict], audio: np.ndarray, language: str, reference: st
             results.append(result)
         emit(result)
 
-    local = [item for item in items if item["kind"] == "local"]
+    local = [item for item in items if item["kind"] in ("local", "gpu")]
     threads = [threading.Thread(target=one, args=(item,), daemon=True) for item in items if item["kind"] == "remote"]
     for thread in threads:
         thread.start()
@@ -126,6 +153,16 @@ def benchmark(items: list[dict], audio: np.ndarray, language: str, reference: st
     for thread in threads:
         thread.join()
     return results
+
+
+def accel_ready(model: str) -> bool:
+    import accel
+    return accel.model_installed(model)
+
+
+def accel_fetch(model: str) -> None:
+    import accel
+    accel.install_model(model)
 
 
 def markdown(results: list[dict], seconds: float) -> str:
@@ -389,7 +426,7 @@ class Window:
         self.table.delete(*self.table.get_children())
         self.running = True
         self.run_button.configure(state="disabled")
-        downloads = [i["label"] for i in chosen if i["kind"] == "local" and not i["ready"]]
+        downloads = [i["label"] for i in chosen if i["kind"] in ("local", "gpu") and not i["ready"]]
         self.status.configure(text=tr("Running… {note}").format(note=(tr("downloading {names} first") .format(names=", ".join(downloads))
                                                                         if downloads else "")), fg=self.theme["sec"])
         audio, language, strip = self.audio, self.language, self.strip.get()

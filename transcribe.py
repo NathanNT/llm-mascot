@@ -131,8 +131,20 @@ def transcribe_remote(audio: np.ndarray, language: str, config: dict) -> str:
     return text
 
 
+def is_gpu(config: dict) -> bool:
+    return config.get("engine", "local") == "gpu"
+
+
 def run(audio: np.ndarray, language: str, config: dict, local, fallback: bool) -> str:
-    """Transcribe with the chosen engine; if a service is unreachable or out of credit, use the local model when it is ready."""
+    """Transcribe with the chosen engine; if the GPU server or a service fails, use the local model when it is ready."""
+    if is_gpu(config):
+        import accel                               # imported here: accel itself needs this module
+        try:
+            return accel.transcribe_gpu(audio, language, config.get("whisper_model", "base"))
+        except accel.AccelError as exc:
+            if fallback:
+                return local(audio, language)
+            raise TranscribeError(str(exc)) from exc
     if not is_remote(config):
         return local(audio, language)
     try:

@@ -26,3 +26,11 @@ Changes to windows, hover or animation behaviour should also pass the desktop ch
 - More mascot reactions (for example a low-quota warning), or an importer for other character formats.
 - Other quota sources behind the `quotas_url` JSON shape.
 - macOS / Linux ports of `windows.py` and `layered.py`.
+
+## Publishing a new GPU runtime
+
+The GPU speech server is built by `.github/workflows/whisper-runtime.yml`, never uploaded by hand.
+
+1. Bump `WHISPER_CPP_TAG` in the workflow if you want a newer whisper.cpp.
+2. Push a tag: `git tag runtime-v2 && git push origin runtime-v2`. The workflow builds with the Vulkan backend and creates the release with `whisper-vulkan-win-x64.zip` and its `.sha256`.
+3. Put the new URL, size and SHA-256 in `runtime_manifest.json` and commit. The app refuses any runtime whose checksum differs from that file.

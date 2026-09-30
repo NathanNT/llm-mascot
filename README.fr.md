@@ -142,8 +142,8 @@ Sombre par défaut, avec un thème clair chaleureux :<br>
 |---|---|
 | **Lancer au démarrage de Windows** | Démarre la mascotte à l'ouverture de votre session (une entrée par utilisateur, sans droits administrateur). Appliqué en appuyant sur *Enregistrer*. |
 | **Quand le texte est prêt** | *Le taper dans le champ* (par défaut) ou *Copier seulement* dans le presse-papiers. |
-| **Transcrire avec** | *Ce PC* (par défaut, privé, hors ligne) ou un service externe : **OpenAI** (`gpt-4o-mini-transcribe`, le rapide et économique), **Groq** (`whisper-large-v3-turbo`, très rapide, offre gratuite) ou **Autre** (toute adresse compatible OpenAI). Si le service est injoignable ou sans crédit, le modèle local prend le relais quand il est installé. |
-| **Modèle vocal** (Ce PC) | `tiny` (≈75 Mo) à `large-v3` (≈3 Go). **`base` (★) est le choix rapide par défaut**, chargé en arrière-plan au démarrage pour que la première dictée réponde tout de suite. Pour un vocabulaire technique, `turbo` ou un service externe est en général bien plus précis : mesurez-le avec le benchmark. Un modèle se télécharge une seule fois, à sa première utilisation. |
+| **Transcrire avec** | *Processeur* (par défaut, privé, hors ligne), *GPU* (votre carte graphique, voir plus bas) ou un service externe : **OpenAI** (`gpt-4o-mini-transcribe`, le rapide et économique), **Groq** (`whisper-large-v3-turbo`, très rapide, offre gratuite) ou **Autre** (toute adresse compatible OpenAI). Si le service est injoignable ou sans crédit, le modèle local prend le relais quand il est installé. |
+| **Modèle vocal** (processeur, GPU) | `tiny` (≈75 Mo) à `large-v3` (≈3 Go). **`base` (★) est le choix rapide par défaut**, chargé en arrière-plan au démarrage pour que la première dictée réponde tout de suite. Pour un vocabulaire technique, `turbo` ou un service externe est en général bien plus précis : mesurez-le avec le benchmark. Un modèle se télécharge une seule fois, à sa première utilisation. |
 | **Reformuler avec** | *Automatique* (Codex s'il est disponible, sinon Claude), *Codex*, *Claude*, ou *Non* pour toujours insérer la transcription brute. |
 | **Modèle Codex / Claude** | Le modèle utilisé par chaque outil. Vide = le modèle par défaut de l'outil ; pour Claude, vous pouvez saisir un alias comme `sonnet`, `opus` ou `haiku`, ou un nom complet. |
 | **Style de transcription** | La consigne d'édition envoyée avec votre dictée. Choisissez un style prédéfini ou écrivez le vôtre. |
@@ -153,6 +153,19 @@ Les styles : **Mise au propre** (hésitations et ponctuation, vos propres mots),
 <div align="center">
 <img src="docs/img/fr/advanced-service.png" alt="Choisir un service de transcription externe" width="640">
 </div>
+
+#### Faire tourner le modèle vocal sur votre carte graphique
+
+*Transcrire avec → GPU* utilise whisper.cpp avec le moteur **Vulkan** : il fonctionne donc sur les cartes **AMD, NVIDIA et Intel** (la voie CUDA habituelle n'existe que pour NVIDIA). La page détecte votre carte et son pilote, puis un seul bouton prépare tout :
+
+<div align="center">
+<img src="docs/img/fr/advanced-gpu.png" alt="Le panneau d'accélération GPU avec la carte graphique détectée" width="640">
+</div>
+
+- **Détection** : votre adaptateur (AMD / NVIDIA / Intel) et si son pilote expose Vulkan. Sinon, *Ouvrir la page des pilotes* vous mène à la page de téléchargement du constructeur ; installer un pilote graphique demande votre accord d'administrateur, donc l'application ne le fait jamais en silence.
+- **Configurer l'accélération GPU** télécharge deux éléments, uniquement quand vous appuyez sur le bouton : le moteur vocal (18 Mo, `whisper-server.exe`, **compilé à partir du code public de whisper.cpp par les [GitHub Actions](.github/workflows/whisper-runtime.yml) de ce dépôt** et publié en release ; son SHA-256 est figé dans `runtime_manifest.json` et vérifié avant que quoi que ce soit soit décompressé ou lancé), et le modèle choisi depuis le [dépôt whisper.cpp sur Hugging Face](https://huggingface.co/ggerganov/whisper.cpp) (base ≈148 Mo, turbo ≈574 Mo…; vérifié avec la somme de contrôle de Hugging Face).
+- **Reste rapide** : le serveur garde le modèle chargé sur le GPU, démarre en arrière-plan avec l'application et s'arrête avec elle (il ne peut pas lui survivre). En cas de problème, le modèle du processeur prend le relais s'il est installé.
+- **Tester le GPU** indique le temps de chargement du modèle et le temps de réponse ; le [benchmark](#benchmark-sur-vos-propres-mots) liste les modèles GPU à côté de ceux du processeur pour comparer sur votre propre voix.
 
 #### Un transcripteur externe : une clé API, pas votre connexion ChatGPT
 
@@ -196,7 +209,7 @@ Tout ce que vous changez dans la fenêtre de réglages est enregistré dans `set
   "insert": "type",             // "type" tape au niveau du curseur ; "copy" met seulement le texte dans le presse-papiers (Ctrl+V)
   "whisper_model": "base",      // modèle local : "tiny", "base", "small", "turbo", "medium", "large-v3"
   "transcription": {
-    "engine": "local",          // "local", "openai", "groq" ou "custom"
+    "engine": "local",          // "local" (processeur), "gpu", "openai", "groq" ou "custom"
     "model": "",                // vide = le modèle rapide par défaut du service
     "base_url": "",             // "custom" seulement : une adresse compatible OpenAI, https (http seulement pour localhost)
     "api_key": ""               // écrite par l'application, chiffrée ; une variable d'environnement convient aussi
@@ -245,6 +258,8 @@ layered.py      fenêtres à transparence par pixel (UpdateLayeredWindow) : bord
 mascots.py      atlas de sprites, packs clippy.js, GIF – et lien événement → animation
 voice.py        capture du micro et transcription faster-whisper
 transcribe.py   service vocal externe optionnel (OpenAI, Groq…) avec repli local
+accel.py        moteur vocal GPU (whisper.cpp Vulkan) : téléchargement, somme de contrôle, serveur
+gpu.py          détection de la carte graphique et du pilote Vulkan
 benchmark.py    compare les modèles vocaux sur vos propres mots (fenêtre ou ligne de commande)
 scoring.py      taux d'erreur de mots et différences entre une transcription et le texte lu
 core.py         reformulation Codex optionnelle et lecture de la consommation

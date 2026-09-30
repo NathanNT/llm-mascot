@@ -57,8 +57,21 @@ class Recorder:
             self.warm_up()
 
     def warm_up(self) -> None:
-        """Load the local model in the background so the first dictation answers at once (never downloads anything)."""
-        if transcribe.is_remote(self.get_config()) or not model_downloaded(self.model_name):
+        """Load the model in the background so the first dictation answers at once (never downloads anything)."""
+        config = self.get_config()
+        if transcribe.is_gpu(config):
+            import accel
+
+            def start_server():
+                try:
+                    if accel.ready(self.model_name):
+                        accel.server.ensure(self.model_name)
+                except accel.AccelError:
+                    pass                                   # the first dictation reports it, or falls back to the CPU
+
+            threading.Thread(target=start_server, daemon=True).start()
+            return
+        if transcribe.is_remote(config) or not model_downloaded(self.model_name):
             return
         threading.Thread(target=self._load_model, daemon=True).start()
 
@@ -115,7 +128,8 @@ class Recorder:
                 raise RuntimeError(tr("No voice detected"))
 
             self.on_status("transcribing")
-            text = transcribe.run(audio, language, self.get_config(), self._local, fallback=model_downloaded(self.model_name))
+            config = {**self.get_config(), "whisper_model": self.model_name}
+            text = transcribe.run(audio, language, config, self._local, fallback=model_downloaded(self.model_name))
             if not text:
                 raise RuntimeError(tr("No speech recognised"))
             self.on_result(text, language)

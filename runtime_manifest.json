@@ -1,0 +1,8 @@
+{
+  "whispercpp": {
+    "version": "v1.9.4 (Vulkan)",
+    "size": 18100959,
+    "url": "https://github.com/NathanNT/llm-mascot/releases/download/runtime-v1/whisper-vulkan-win-x64.zip",
+    "sha256": "30ec877ef13e4162eb098b0db0359113d397e8d4f8ed1cbf94fc4bcd9684ec1f"
+  }
+}

@@ -179,6 +179,11 @@ try:
     app.settings_window.top.update()
     pump(0.6)
     grab(window_rect(app.settings_window.top)).save(out / "advanced-service.png")
+    app.prefs["transcription"]["engine"] = "gpu"
+    app.settings_window.build()
+    app.settings_window.top.update()
+    pump(0.8)
+    grab(window_rect(app.settings_window.top)).save(out / "advanced-gpu.png")
     app.prefs["transcription"]["engine"] = "local"
     app.settings_window.close()
     pump(0.3)

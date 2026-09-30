@@ -142,8 +142,8 @@ Dark by default, with a warm light theme:<br>
 |---|---|
 | **Launch at Windows startup** | Starts the mascot when you sign in (a per-user entry, no admin rights). Applied when you press *Save*. |
 | **When the text is ready** | *Type into the field* (default) or *Copy only* to the clipboard. |
-| **Transcribe with** | *This PC* (default, private, offline) or an external service: **OpenAI** (`gpt-4o-mini-transcribe`, the fast and cheap one), **Groq** (`whisper-large-v3-turbo`, very fast, free tier) or **Other** (any OpenAI-compatible address). If the service is unreachable or out of credit, the local model takes over when it is installed. |
-| **Speech model** (This PC) | `tiny` (≈75 MB) to `large-v3` (≈3 GB). **`base` (★) is the fast default**, loaded in the background at start-up so the first dictation answers at once. For technical vocabulary, `turbo` or an external service is usually much more accurate: measure it with the benchmark. A model is downloaded once, the first time it is used. |
+| **Transcribe with** | *CPU* (default, private, offline), *GPU* (your graphics card, see below) or an external service: **OpenAI** (`gpt-4o-mini-transcribe`, the fast and cheap one), **Groq** (`whisper-large-v3-turbo`, very fast, free tier) or **Other** (any OpenAI-compatible address). If the service is unreachable or out of credit, the local model takes over when it is installed. |
+| **Speech model** (CPU, GPU) | `tiny` (≈75 MB) to `large-v3` (≈3 GB). **`base` (★) is the fast default**, loaded in the background at start-up so the first dictation answers at once. For technical vocabulary, `turbo` or an external service is usually much more accurate: measure it with the benchmark. A model is downloaded once, the first time it is used. |
 | **Rewrite with** | *Automatic* (Codex if available, else Claude), *Codex*, *Claude*, or *Off* to always insert the raw transcript. |
 | **Codex / Claude model** | The model each tool uses. Empty means the tool's own default; for Claude you can type an alias such as `sonnet`, `opus` or `haiku`, or a full model name. |
 | **Transcription style** | The editing instruction sent with your dictation. Choose a preset or write your own. |
@@ -153,6 +153,19 @@ The styles: **Clean-up** (hesitations and punctuation, your own words), **Proofr
 <div align="center">
 <img src="docs/img/en/advanced-service.png" alt="Choosing an external transcription service" width="640">
 </div>
+
+#### Run the speech model on your graphics card
+
+*Transcribe with → GPU* uses whisper.cpp with the **Vulkan** backend, so it works on **AMD, NVIDIA and Intel** cards alike (the usual CUDA route is NVIDIA-only). The page detects your card and its driver, then one button sets everything up:
+
+<div align="center">
+<img src="docs/img/en/advanced-gpu.png" alt="GPU acceleration panel with the detected graphics card" width="640">
+</div>
+
+- **Detection**: your adapter (AMD / NVIDIA / Intel) and whether its driver exposes Vulkan. If not, *Open the driver page* takes you to the vendor's download page; installing a graphics driver needs your administrator approval, so the app never does it silently.
+- **Set up GPU acceleration** downloads two things, only when you press the button: the speech runtime (18 MB, `whisper-server.exe`, **built from whisper.cpp's public source by this repository's [GitHub Actions](.github/workflows/whisper-runtime.yml)** and published as a release; its SHA-256 is pinned in `runtime_manifest.json` and checked before anything is unpacked or run), and the model you selected from the [whisper.cpp repository on Hugging Face](https://huggingface.co/ggerganov/whisper.cpp) (base ≈148 MB, turbo ≈574 MB…; checked against Hugging Face's own checksum).
+- **It stays fast**: the server keeps the model loaded on the GPU, starts in the background with the app, and is stopped with it (it cannot outlive the app). If anything goes wrong the CPU model takes over when it is installed.
+- **Test the GPU** reports the model load time and the answer time; the [benchmark](#benchmark-your-own-words) lists GPU models next to CPU ones so you can compare on your own voice.
 
 #### An external transcriber: API key, not your ChatGPT login
 
@@ -196,7 +209,7 @@ Everything you change in the settings window is saved to `settings.json` (next t
   "insert": "type",             // "type" types at the caret; "copy" only puts the text on the clipboard (paste with Ctrl+V)
   "whisper_model": "base",      // local model: "tiny", "base", "small", "turbo", "medium", "large-v3"
   "transcription": {
-    "engine": "local",          // "local", "openai", "groq" or "custom"
+    "engine": "local",          // "local" (CPU), "gpu", "openai", "groq" or "custom"
     "model": "",                // empty = the fast default of the service
     "base_url": "",             // "custom" only: an OpenAI-compatible address, https (http only for localhost)
     "api_key": ""               // written by the app, encrypted; you can use an environment variable instead
@@ -245,6 +258,8 @@ layered.py      per-pixel-alpha windows (UpdateLayeredWindow): clean edges, real
 mascots.py      sprite atlases, clippy.js character packs, GIFs – and the event → animation mapping
 voice.py        microphone capture and faster-whisper transcription
 transcribe.py   optional external speech service (OpenAI, Groq…) with local fallback
+accel.py        GPU speech runtime (whisper.cpp Vulkan): download, checksum, server
+gpu.py          graphics card and Vulkan driver detection
 benchmark.py    compare speech models on your own words (window or command line)
 scoring.py      word error rate and diff of a transcript against the text that was read
 core.py         optional Codex rewrite and usage reading

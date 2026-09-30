@@ -85,7 +85,7 @@ def load() -> dict:
         data["claude"]["model"] = stored["claude"]["model"]
     if isinstance(stored.get("transcription"), dict):
         incoming = stored["transcription"]
-        if incoming.get("engine") in ("local", "openai", "groq", "custom"):
+        if incoming.get("engine") in ("local", "gpu", "openai", "groq", "custom"):
             data["transcription"]["engine"] = incoming["engine"]
         if isinstance(incoming.get("model"), str) and re.fullmatch(r"[\w.\-:/]{0,80}", incoming["model"]):
             data["transcription"]["model"] = incoming["model"]

@@ -22,6 +22,8 @@ from i18n import tr
 from PIL import Image, ImageDraw, ImageSequence, ImageTk
 
 import appicons
+import accel
+import gpu
 import layered
 import secrets_store
 import transcribe
@@ -1398,6 +1400,7 @@ class RoverApp:
 
     def quit(self):
         self.recorder.stop()
+        accel.stop()
         if self.hotkey_ok:
             unregister_hotkey()
         self.root.destroy()
@@ -1661,15 +1664,18 @@ class SettingsWindow:
             app.apply_advanced()
             self.top.after(10, self.build)          # the section below changes shape
 
-        self.choice(inner, ((tr("This PC"), "local"), ("OpenAI", "openai"), ("Groq", "groq"), (tr("Other"), "custom")),
+        self.choice(inner, ((tr("CPU"), "local"), ("GPU", "gpu"), ("OpenAI", "openai"), ("Groq", "groq"), (tr("Other"), "custom")),
                     lambda: config.get("engine", "local"), set_engine, pady=(2, 0), label=tr("Transcribe with"))
-        if config.get("engine", "local") == "local":
+        engine = config.get("engine", "local")
+        if engine == "local":
             self.fill_local_models(inner)
+        elif engine == "gpu":
+            self.fill_gpu(inner)
         else:
             self.fill_remote(inner)
         button(inner, self.app.theme, tr("Benchmark the models…"), app.open_benchmark).pack(anchor="w", pady=(8, 0))
 
-    def fill_local_models(self, inner):
+    def fill_local_models(self, inner, on_gpu: bool = False):
         app, theme = self.app, self.app.theme
         bg = theme["card"]
         grid = tk.Frame(inner, bg=bg)
@@ -1684,12 +1690,14 @@ class SettingsWindow:
             tk.Label(top, text=name, bg=theme["panel"], fg=theme["text"], font=(FONT_SEMIBOLD, 10), cursor="hand2").pack(side="left")
             if name == "base":
                 tk.Label(top, text="★", bg=theme["panel"], fg=theme["accent"], font=(FONT_SEMIBOLD, 9), cursor="hand2").pack(side="left", padx=(4, 0))
-            tk.Label(cell, text=size, bg=theme["panel"], fg=theme["accent"], font=(FONT_MONO, 8), cursor="hand2").pack(anchor="w", padx=8)
+            size_text = (f"≈{accel.download_size_mb(name)} MB" + (" ✓" if accel.model_installed(name) else "")) if on_gpu else size
+            tk.Label(cell, text=size_text, bg=theme["panel"], fg=theme["ok"] if on_gpu and accel.model_installed(name) else theme["accent"],
+                     font=(FONT_MONO, 8), cursor="hand2").pack(anchor="w", padx=8)
             tk.Label(cell, text=tr(hint), bg=theme["panel"], fg=theme["sec"], font=(FONT_REGULAR, 8), wraplength=112, justify="left",
                      cursor="hand2").pack(anchor="w", padx=8, pady=(0, 7))
             for widget in (holder, cell, top, *cell.winfo_children(), *top.winfo_children()):
                 widget.bind("<Button-1>", lambda event, n=name: (app.prefs.__setitem__("whisper_model", n), app.apply_advanced(),
-                                                              self.refresh_advanced()))
+                                                              self.refresh_advanced(), self.on_model_picked()))
             holder.grid(row=index // 3, column=index % 3, padx=(0, 8), pady=(0, 8), sticky="nsew")
             holders[name] = holder
         for column in range(3):
@@ -1700,8 +1708,113 @@ class SettingsWindow:
                 holder.configure(bg=theme["accent"] if app.prefs["whisper_model"] == name else theme["border"])
 
         self.refreshers.append(refresh)
-        tk.Label(inner, text="★ " + tr("Fast default. Models run on this PC and download once; compare them with the benchmark."), bg=bg, fg=theme["sec"],
-                 font=(FONT_REGULAR, 8), wraplength=400, justify="left").pack(anchor="w", pady=(2, 0))
+        if not on_gpu:
+            tk.Label(inner, text="★ " + tr("Fast default. Models run on this PC and download once; compare them with the benchmark."), bg=bg,
+                     fg=theme["sec"], font=(FONT_REGULAR, 8), wraplength=400, justify="left").pack(anchor="w", pady=(2, 0))
+
+    def on_model_picked(self):
+        """In GPU mode the status rows depend on the chosen model."""
+        if self.app.prefs["transcription"].get("engine") == "gpu":
+            self.top.after(10, self.build)
+
+    def fill_gpu(self, inner):
+        app, theme = self.app, self.app.theme
+        bg = theme["card"]
+        info = getattr(app, "gpu_info", None)
+        if info is None:
+            info = app.gpu_info = gpu.detect()
+        model = app.prefs["whisper_model"]
+        self.fill_local_models(inner, on_gpu=True)
+
+        def status(ok: bool | None, text: str):
+            row = tk.Frame(inner, bg=bg)
+            row.pack(fill="x", pady=(2, 0))
+            mark = {True: ("✓", theme["ok"]), False: ("✗", theme["err"]), None: ("•", theme["sec"])}[ok]
+            tk.Label(row, text=mark[0], bg=bg, fg=mark[1], font=(FONT_SEMIBOLD, 9), width=2).pack(side="left")
+            tk.Label(row, text=text, bg=bg, fg=theme["text"] if ok else theme["sec"], font=(FONT_REGULAR, 9), anchor="w", justify="left",
+                     wraplength=380).pack(side="left", fill="x")
+
+        best = info["best"]
+        status(bool(best), (best["name"] if best else tr("No graphics card found")))
+        status(info["vulkan_ready"] if best else None, tr("Graphics driver with Vulkan support") if info["vulkan_ready"]
+               else tr("The graphics driver has no Vulkan support: install or update it"))
+        status(accel.runtime_installed(), tr("GPU speech runtime") + (" · " + tr("installed") if accel.runtime_installed() else
+                                                                          (" · " + tr("not published yet") if not accel.runtime_published()
+                                                                           else " · " + tr("to download"))))
+        status(accel.model_installed(model), tr("Model {model}").format(model=model) + (" · " + tr("installed") if accel.model_installed(model)
+                                                                                        else f" · {tr('to download')} ≈{accel.download_size_mb(model)} MB"))
+        message = tk.Label(inner, bg=bg, fg=theme["sec"], font=(FONT_REGULAR, 8), anchor="w", justify="left", wraplength=400)
+        message.pack(fill="x", pady=(6, 0))
+        bar = tk.Canvas(inner, width=400, height=6, bg=bg, bd=0, highlightthickness=0)
+
+        def ui(function):
+            try:
+                self.top.after(0, function)
+            except (RuntimeError, tk.TclError):
+                pass
+
+        def say(text: str, good: bool | None = None):
+            message.configure(text=text, fg=theme["ok"] if good else (theme["err"] if good is False else theme["sec"]))
+
+        def draw_progress(done: int, total: int, label: str):
+            bar.pack(pady=(4, 0))
+            bar.delete("all")
+            bar.create_line(3, 3, 397, 3, width=6, capstyle="round", fill=theme["track"])
+            if total:
+                bar.create_line(3, 3, 3 + 394 * done / total, 3, width=6, capstyle="round", fill=theme["accent"])
+            say(f"{label} {done / 1e6:.0f} / {total / 1e6:.0f} MB" if total else label)
+
+        def set_up():
+            setup_button.configure(state="disabled")
+
+            def work():
+                try:
+                    if not accel.runtime_installed():
+                        accel.install_runtime(lambda d, t: ui(lambda: draw_progress(d, t, tr("Downloading the runtime"))))
+                    if not accel.model_installed(model):
+                        accel.install_model(model, lambda d, t: ui(lambda: draw_progress(d, t, tr("Downloading the model"))))
+                except accel.AccelError as exc:
+                    ui(lambda: (say(str(exc), False), setup_button.configure(state="normal")))
+                    return
+                ui(self.build)
+
+            threading.Thread(target=work, daemon=True).start()
+
+        def test():
+            say(tr("Starting the GPU speech server…"))
+
+            def work():
+                try:
+                    started = time.perf_counter()
+                    accel.server.ensure(model)
+                    loaded = time.perf_counter() - started
+                    started = time.perf_counter()
+                    accel.server.transcribe(np.zeros(8000, dtype=np.float32), "en", model)
+                    ui(lambda: say(tr("✓ GPU ready: model loaded in {load} s, answers in {run} s").format(
+                        load=f"{loaded:.1f}", run=f"{time.perf_counter() - started:.2f}"), True))
+                except accel.AccelError as exc:
+                    ui(lambda: say("✗ " + str(exc), False))
+
+            threading.Thread(target=work, daemon=True).start()
+
+        def refresh_detection():
+            app.gpu_info = None
+            self.build()
+
+        actions = tk.Frame(inner, bg=bg)
+        actions.pack(fill="x", pady=(6, 0))
+        needs_setup = not (accel.runtime_installed() and accel.model_installed(model))
+        setup_button = button(actions, theme, tr("Set up GPU acceleration"), set_up, primary=True)
+        if needs_setup and info["vulkan_ready"] and accel.runtime_published():
+            setup_button.pack(side="left")
+        elif not needs_setup:
+            button(actions, theme, tr("Test the GPU"), test, primary=True).pack(side="left")
+        if best and not info["vulkan_ready"]:
+            button(actions, theme, tr("Open the driver page"), lambda: webbrowser.open(info["driver_page"]), primary=True).pack(side="left")
+        button(actions, theme, tr("Detect again"), refresh_detection).pack(side="right")
+        tk.Label(inner, text=tr("Downloads only happen when you press the button: the runtime is built from public source by this project "
+                                "(checksum verified), the model comes from the whisper.cpp repository on Hugging Face (checksum verified)."),
+                 bg=bg, fg=theme["sec"], font=(FONT_REGULAR, 8), wraplength=400, justify="left").pack(anchor="w", pady=(6, 0))
 
     def fill_remote(self, inner):
         app, theme = self.app, self.app.theme
