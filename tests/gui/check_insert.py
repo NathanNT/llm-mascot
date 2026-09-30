@@ -1,6 +1,7 @@
-"""Manual check (needs a Windows desktop): small isolated smoke test: typing must not touch the clipboard or submit a form."""
+"""Manual check (needs a Windows desktop): typing must not touch the clipboard or submit a form."""
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import tkinter as tk
@@ -18,8 +19,7 @@ def main():
 
     def inject():
         hwnd = foreground_window()
-        result["inserted"] = insert_text(hwnd, "Hello, this is a test.
-Second line.")
+        result["inserted"] = insert_text(hwnd, "Hello, this is a test.\nSecond line.")
         root.after(250, inspect)
 
     def inspect():
