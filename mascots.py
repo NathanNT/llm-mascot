@@ -115,7 +115,7 @@ def file_set(path: Path, size: int, box_h: int) -> MascotSet:
         if len(frames) >= 60:
             break
     if not frames:
-        raise ValueError("image vide")
+        raise ValueError("empty image")
     return static_set(frames, 100 if len(frames) > 1 else 1000)
 
 
@@ -144,7 +144,7 @@ def pack_set(folder: Path, size: int, box_h: int) -> MascotSet:
     text = (folder / "agent.js").read_text(encoding="utf-8")
     match = re.search(r"\{.*\}", text, re.S)
     if match is None:
-        raise ValueError("agent.js illisible")
+        raise ValueError("unreadable agent.js")
     data = json.loads(match.group(0))
     frame_w, frame_h = data["framesize"]
     sheet = Image.open(folder / "map.png").convert("RGBA")
@@ -171,7 +171,7 @@ def pack_set(folder: Path, size: int, box_h: int) -> MascotSet:
         if frames:
             clips[name] = Clip(frames, delays, branching if any(branching) else None)
     if not clips:
-        raise ValueError("aucune animation dans agent.js")
+        raise ValueError("no animation in agent.js")
     rest = clips.get("RestPose") or clips.get("Idle1_1") or next(iter(clips.values()))
     clips["idle"] = Clip([rest.frames[0]], [1000])
     variants = [name for name in clips if name.startswith("Idle") and name != "idle"]

@@ -18,7 +18,8 @@ def main():
 
     def inject():
         hwnd = foreground_window()
-        result["inserted"] = insert_text(hwnd, "Bonjour, ceci est un test.\nDeuxième ligne.")
+        result["inserted"] = insert_text(hwnd, "Hello, this is a test.
+Second line.")
         root.after(250, inspect)
 
     def inspect():
