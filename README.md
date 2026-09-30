@@ -61,7 +61,7 @@ Or download the ZIP from GitHub, extract it and double-click **`install.bat`**. 
 1. **Hover the mascot** – it waves and reveals two round buttons and the shortcut rail.
 2. **Hover the gauge** (above) to open the **usage** panel. **Hover the microphone** (below) to open the **dictation** panel.
 3. **Click in any text field**, then click the mascot (or press **Ctrl+Alt+R**), speak, and click again.
-4. The text appears in the field. Nothing is sent: you press Enter yourself.
+4. The text appears at the caret, after whatever you had already typed. Nothing is sent: you press Enter yourself. Line breaks are typed as Shift+Enter.
 5. **Drag** the mascot anywhere; every panel follows it. **Right-click** for the menu.
 
 <div align="center">
@@ -72,16 +72,16 @@ Or download the ZIP from GitHub, extract it and double-click **`install.bat`**. 
 ## 🎭 Mascots
 
 <div align="center">
-<img src="docs/img/en/mascots.png" alt="The classic Windows assistants: Clippy, Merlin, Genie, Links, Rocky, Peedy, F1, Genius and Rover XP" width="760">
+<img src="docs/img/en/mascots.png" alt="The classic Windows assistants: Clippy, Merlin, Genie, Rocky, Peedy, F1, Genius and Rover XP" width="760">
 </div>
 
 The classic animated Windows assistants work out of the box, each with dozens of animations. Here they are at work while the app transcribes and rewrites a dictation:
 
 <div align="center">
-<img src="docs/img/en/characters.png" alt="Clippy, Merlin, Genie, Links and Peedy playing their processing animations" width="100%">
+<img src="docs/img/en/characters.png" alt="Clippy, Merlin, Genie, Peedy and F1 playing their processing animations" width="100%">
 </div>
 
-- **Clippy, Merlin, Genie, Links, Rocky, Peedy, F1, Genius, Rover XP…** use the clippy.js format. They are Microsoft's artwork, so they are **not included** in this repository; download them onto your own machine, for your own use, with:
+- **Clippy, Merlin, Genie, Rocky, Peedy, F1, Genius, Rover XP…** use the clippy.js format. They are Microsoft's artwork, so they are **not included** in this repository; download them onto your own machine, for your own use, with:
   ```powershell
   .venv\Scripts\python tools\get_agents.py --list
   .venv\Scripts\python tools\get_agents.py Clippy Merlin Genie
@@ -138,6 +138,7 @@ Everything you change in the settings window is saved to `settings.json` (next t
 {
   "ui_language": "auto",        // "auto" follows Windows, or "en" / "fr"
   "language": "en",             // dictation language: "en" or "fr" (also the FR/EN switch in the panel)
+  "insert": "type",             // "type" types at the caret; "copy" only puts the text on the clipboard (paste with Ctrl+V)
   "whisper_model": "base",      // "tiny", "base", "small", "medium"… bigger = more accurate, slower
   "quotas_url": "",             // optional usage service, see below
   "codex": {
@@ -210,6 +211,8 @@ Adding a language: translate the strings in `i18n.py` (a unit test checks that e
 | *"Whisper model unavailable"* | The first dictation needs internet to fetch the model; run `install.ps1 -DownloadModel` while online. |
 | Ctrl+Alt+R does nothing | Another app owns the shortcut; click the mascot instead. |
 | The text is typed in the wrong window | Click in the target field *before* dictating; the mascot remembers the last window you used. |
+| Typing is unreliable in a particular app | Set `"insert": "copy"`: the text goes to the clipboard and you paste it yourself. The panel also has a **Copy** button and the right-click menu has *Copy last text*. |
+| Some of my draft was replaced | The text is typed at the caret, so a *selected* passage is replaced like any typing. The mascot never takes the keyboard focus when you click it, so your caret and draft stay untouched. |
 | Something crashed | Look at `rover.log` next to `rover.py`. |
 
 ## Privacy & security

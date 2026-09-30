@@ -42,8 +42,8 @@ INNER_W = BUBBLE_W - 2 * BUBBLE_PAD
 BUTTON = 44
 GAP = 8
 TAIL = 7
-CLOSE_DELAY = 0.4
-REVEAL_GRACE = 0.5
+CLOSE_DELAY = 0.15
+REVEAL_GRACE = 0.25
 
 
 def photo(image: Image.Image) -> ImageTk.PhotoImage:
@@ -64,7 +64,7 @@ def make_popup(master, per_pixel: bool = False) -> tk.Toplevel:
 class Animated:
     """Fade-and-slide open/close animation shared by every popup around the mascot."""
 
-    DURATION = 0.18
+    DURATION = 0.13
 
     def init_anim(self, kick, slide=(0, 0)):
         self.kick = kick
@@ -105,9 +105,11 @@ class Animated:
                 self._move()
             self.win.deiconify()
             self.win.lift()
+            self.win.update_idletasks()
             if self.per_pixel:
-                self.win.update_idletasks()
                 self._move()
+            else:
+                layered.no_activate(self.win)
         self.target = 1
         self.kick()
 
@@ -293,6 +295,7 @@ class RoverApp:
         self.target_hwnd = 0
         self.busy = False
         self.pending_text = ""
+        self.last_output = ""
         self.notice = ""
         self.notice_until = 0.0
         self.step = "whisper"
@@ -358,7 +361,7 @@ class RoverApp:
         self.loop(self.poll_hotkey, 50)
         self.loop(self.track_focus, 120)
         self.loop(self.animate, 30)
-        self.loop(self.tick, 80)
+        self.loop(self.tick, 50)
         self.refresh_quotas_async()
 
     # ------------------------------------------------------------------ look & layout
@@ -452,7 +455,7 @@ class RoverApp:
     def paint_mascot(self) -> None:
         if self.mset is None:
             return
-        hwnd = layered.enable(self.root)
+        hwnd = layered.enable(self.root, no_activate=True)
         layered.update(hwnd, self.mascot_bitmap(self.clip_name, self.frame_index))
 
     # ------------------------------------------------------------------ mascot animation
@@ -509,6 +512,7 @@ class RoverApp:
     def build_menu(self) -> None:
         self.menu = tk.Menu(self.root, tearoff=0)
         self.menu.add_command(label=tr("Dictate / stop · Ctrl+Alt+R"), command=self.toggle_voice)
+        self.menu.add_command(label=tr("Copy last text"), command=self.copy_text)
         self.menu.add_command(label=tr("Customize…"), command=self.open_settings)
         self.menu.add_command(label=tr("Open Bloub"), command=lambda: webbrowser.open(prefs.BLOUB_URL))
         self.menu.add_command(label=tr("Open Claude usage"), command=lambda: webbrowser.open(CLAUDE_USAGE_URL))
@@ -695,7 +699,7 @@ class RoverApp:
 
     def set_status(self, text: str) -> None:
         self.notice = text
-        self.notice_until = time.monotonic() + 6 if text else 0.0
+        self.notice_until = time.monotonic() + 3 if text else 0.0
         self.update_status_visuals()
 
     def thread_status(self, text: str):
@@ -711,7 +715,7 @@ class RoverApp:
     def finish_error(self, message: str):
         self.busy = False
         self.error_msg = message[:160]
-        self.error_until = time.monotonic() + 20
+        self.error_until = time.monotonic() + 10
         self.update_status_visuals()
         self.react("error")
 
@@ -733,14 +737,35 @@ class RoverApp:
 
     def complete_rewrite(self, revised: str):
         self.busy = False
-        current = foreground_window()
+        self.last_output = revised
         self.pending_text = revised
+        if self.prefs["insert"] == "copy":
+            self.pending_text = ""
+            self.copy_text(revised)
+            self.react("success")
+            return
+        current = foreground_window()
         if current in (self.target_hwnd, 0) or is_own_window(current):
             if self.insert_pending():
                 self.react("success")
                 return
         self.set_status(tr("The field changed: click to insert."))
         self.react("success")
+
+    def copy_text(self, text: str | None = None, silent: bool = False) -> bool:
+        """Put the text on the clipboard: the always-works alternative to typing it."""
+        text = text if text is not None else (self.pending_text or self.last_output or self.last_transcript)
+        if not text:
+            return False
+        try:
+            self.root.clipboard_clear()
+            self.root.clipboard_append(text)
+            self.root.update()
+        except tk.TclError:
+            return False
+        if not silent:
+            self.set_status(tr("Copied · paste with Ctrl+V"))
+        return True
 
     def insert_pending(self) -> bool:
         if not self.pending_text:
@@ -794,7 +819,7 @@ class RoverApp:
         if not self.target_hwnd:
             self.error_msg = tr("Click in the field where the prompt should go first")
             self.last_transcript = ""
-            self.error_until = time.monotonic() + 8
+            self.error_until = time.monotonic() + 6
             self.update_status_visuals()
             self.react("error")
             return
@@ -860,8 +885,8 @@ class RoverApp:
 
     def handle_hover(self, now: float) -> None:
         """Round buttons and the rail appear while the pointer is on Rover; a button opens its bubble."""
-        cluster = (self.root, self.btn_top.win, self.btn_bottom.win, self.conso.win, self.dictation.win, self.rail.win)
-        over_any = any(pointer_inside(window) for window in cluster)
+        cluster = (self.btn_top.win, self.btn_bottom.win, self.conso.win, self.dictation.win, self.rail.win)
+        over_any = self.pointer_on_mascot() or any(pointer_inside(window) for window in cluster)
         if over_any:
             self.hover_last = now
         revealed = over_any or now - self.hover_last < REVEAL_GRACE
@@ -884,6 +909,13 @@ class RoverApp:
             self.open_dictation()
         elif self.dictation.visible() and not forced and (not self.revealed or now - self.dict_last_over > CLOSE_DELAY):
             self.close_dictation()
+
+    def pointer_on_mascot(self) -> bool:
+        """True over the resting mascot (a few pixels of margin), not over the empty corners of its window."""
+        px, py = self.root.winfo_pointerxy()
+        left, top, right, bottom = self.idle_box
+        x, y = px - self.root.winfo_rootx(), py - self.root.winfo_rooty()
+        return left - 10 <= x <= right + 10 and top - 10 <= y <= bottom + 10
 
     def set_revealed(self, revealed: bool) -> None:
         self.revealed = revealed
@@ -1123,6 +1155,7 @@ class RoverApp:
             actions = tk.Frame(inner, bg=bg)
             actions.pack(fill="x")
             button(actions, theme, tr("Insert into field"), self.insert_pending, primary=True).pack(side="left")
+            button(actions, theme, tr("Copy"), self.copy_text).pack(side="left", padx=(8, 0))
             button(actions, theme, tr("Cancel"), self.cancel_pending).pack(side="left", padx=(8, 0))
         else:
             tk.Label(inner, text=tr("Rewrite failed") if self.last_transcript else tr("Dictation failed"), bg=bg,
@@ -1134,6 +1167,7 @@ class RoverApp:
             button(actions, theme, tr("Retry"), self.retry, primary=True).pack(side="left")
             if self.last_transcript:
                 button(actions, theme, tr("Insert raw text"), self.insert_raw).pack(side="left", padx=(8, 0))
+                button(actions, theme, tr("Copy"), lambda: self.copy_text(self.last_transcript)).pack(side="left", padx=(8, 0))
 
     def step_row(self, inner, text: str, done: bool, spinner: bool, dim: bool = False) -> None:
         theme = self.theme

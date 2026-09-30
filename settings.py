@@ -33,6 +33,7 @@ DEFAULTS: dict = {
     "language": "auto",     # dictation language: "auto" follows Windows; "fr" or "en"
     "apps": DEFAULT_APPS,
     "whisper_model": "base",
+    "insert": "type",       # "type" types at the caret, "copy" only puts the text on the clipboard
     "quotas_url": "",       # optional local JSON service; see README
     "codex": {"home": "", "model": "", "reasoning": "low", "auth_store": "", "rewrite": "auto"},
 }
@@ -65,6 +66,8 @@ def load() -> dict:
     for key in ("quotas_url", "whisper_model"):
         if isinstance(stored.get(key), str):
             data[key] = stored[key]
+    if stored.get("insert") in ("type", "copy"):
+        data["insert"] = stored["insert"]
     if isinstance(stored.get("ui_language"), str):
         data["ui_language"] = stored["ui_language"]
     if data["ui_language"] not in ("auto", "fr", "en"):

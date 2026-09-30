@@ -7,6 +7,9 @@ import ctypes
 LANG = "en"
 
 FR = {
+    "Copy": "Copier",
+    "Copied · paste with Ctrl+V": "Copié · colle avec Ctrl+V",
+    "Copy last text": "Copier le dernier texte",
     "Codex pet": "Mascotte Codex",
     "Dictate / stop · Ctrl+Alt+R": "Dicter / arrêter · Ctrl+Alt+R",
     "Customize…": "Personnalisation…",

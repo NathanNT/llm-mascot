@@ -134,29 +134,63 @@ def consume_hotkey(hotkey_id: int = 1) -> bool:
     return fired
 
 
-def insert_text(hwnd: int, value: str) -> bool:
-    """Insert Unicode characters at the caret without changing the clipboard or sending Enter."""
-    if not hwnd or not user32.IsWindow(hwnd) or not value:
-        return False
-    user32.SetForegroundWindow(hwnd)
-    time.sleep(0.12)
-    if foreground_window() != hwnd:
-        return False
+VK_SHIFT, VK_CONTROL, VK_MENU, VK_RETURN = 0x10, 0x11, 0x12, 0x0D
+CRLF, CR, LF = chr(13) + chr(10), chr(13), chr(10)
+user32.GetAsyncKeyState.argtypes = (ctypes.c_int,)
+user32.GetAsyncKeyState.restype = ctypes.c_short
 
-    units = value.encode("utf-16-le")
-    events: list[INPUT] = []
-    for index in range(0, len(units), 2):
-        code_unit = int.from_bytes(units[index:index + 2], "little")
-        for flags in (KEYEVENTF_UNICODE, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP):
-            entry = INPUT()
-            entry.type = INPUT_KEYBOARD
-            entry.data.ki = KEYBDINPUT(0, code_unit, flags, 0, 0)
-            events.append(entry)
 
+def _key(vk: int = 0, scan: int = 0, flags: int = 0) -> INPUT:
+    entry = INPUT()
+    entry.type = INPUT_KEYBOARD
+    entry.data.ki = KEYBDINPUT(vk, scan, flags, 0, 0)
+    return entry
+
+
+def _send(events: list[INPUT]) -> bool:
     # SendInput accepts arrays of limited size more reliably for long prompts.
     for start in range(0, len(events), 256):
         batch = events[start:start + 256]
         array = (INPUT * len(batch))(*batch)
         if user32.SendInput(len(array), array, ctypes.sizeof(INPUT)) != len(array):
+            return False
+    return True
+
+
+def _wait_for_modifiers_released(timeout: float = 1.5) -> None:
+    """Typing while Ctrl/Alt are still down (the dictation shortcut) would trigger shortcuts instead of text."""
+    end = time.monotonic() + timeout
+    while time.monotonic() < end and any(user32.GetAsyncKeyState(vk) & 0x8000 for vk in (VK_CONTROL, VK_MENU, VK_SHIFT)):
+        time.sleep(0.03)
+
+
+def insert_text(hwnd: int, value: str) -> bool:
+    """Type `value` at the caret of `hwnd`: no clipboard, no Enter key, existing text is left alone.
+
+    Focus is only touched when `hwnd` is not already the foreground window. Line breaks are sent as Shift+Enter so
+    that a multi-line prompt can never submit the message.
+    """
+    if not hwnd or not user32.IsWindow(hwnd) or not value:
+        return False
+    if foreground_window() != hwnd:
+        user32.SetForegroundWindow(hwnd)
+        time.sleep(0.12)
+        if foreground_window() != hwnd:
+            return False
+    _wait_for_modifiers_released()
+
+    lines = value.replace(CRLF, LF).replace(CR, LF).split(LF)
+    for index, line in enumerate(lines):
+        if index:
+            newline = [_key(VK_SHIFT), _key(VK_RETURN), _key(VK_RETURN, flags=KEYEVENTF_KEYUP), _key(VK_SHIFT, flags=KEYEVENTF_KEYUP)]
+            if not _send(newline):
+                return False
+        units = line.encode("utf-16-le")
+        events: list[INPUT] = []
+        for position in range(0, len(units), 2):
+            code_unit = int.from_bytes(units[position:position + 2], "little")
+            events.append(_key(0, code_unit, KEYEVENTF_UNICODE))
+            events.append(_key(0, code_unit, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP))
+        if events and not _send(events):
             return False
     return True

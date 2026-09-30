@@ -107,6 +107,14 @@ def enable(widget, no_activate: bool = False) -> int:
     return hwnd
 
 
+def no_activate(widget) -> int:
+    """Clicking this window must never take the keyboard focus away from the application being dictated into."""
+    hwnd = toplevel_hwnd(widget)
+    style = user32.GetWindowLongW(hwnd, GWL_EXSTYLE) | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW
+    user32.SetWindowLongW(hwnd, GWL_EXSTYLE, style)
+    return hwnd
+
+
 def update(hwnd: int, bitmap: Bitmap, x: int | None = None, y: int | None = None, alpha: int = 255) -> bool:
     """Draw `bitmap` into the layered window (optionally moving it) with a constant fade `alpha` (0-255)."""
     position = wintypes.POINT(x, y) if x is not None and y is not None else None

@@ -61,7 +61,7 @@ Ou téléchargez le ZIP depuis GitHub, extrayez-le et double-cliquez sur **`inst
 1. **Survolez la mascotte** : elle salue et fait apparaître deux boutons ronds et le rail de raccourcis.
 2. **Survolez la jauge** (au-dessus) pour ouvrir le panneau de **consommation**. **Survolez le micro** (en dessous) pour ouvrir le panneau de **dictée**.
 3. **Cliquez dans un champ de texte**, puis cliquez sur la mascotte (ou **Ctrl+Alt+R**), parlez, recliquez.
-4. Le texte apparaît dans le champ. Rien n'est envoyé : vous appuyez vous-même sur Entrée.
+4. Le texte apparaît au niveau du curseur, après ce que vous aviez déjà écrit. Rien n'est envoyé : vous appuyez vous-même sur Entrée. Les retours à la ligne sont tapés en Maj+Entrée.
 5. **Déplacez** la mascotte où vous voulez ; les panneaux la suivent. **Clic droit** pour le menu.
 
 <div align="center">
@@ -72,16 +72,16 @@ Ou téléchargez le ZIP depuis GitHub, extrayez-le et double-cliquez sur **`inst
 ## 🎭 Mascottes
 
 <div align="center">
-<img src="docs/img/fr/mascots.png" alt="Les assistants Windows classiques : Clippy, Merlin, Genie, Links, Rocky, Peedy, F1, Genius et Rover XP" width="760">
+<img src="docs/img/fr/mascots.png" alt="Les assistants Windows classiques : Clippy, Merlin, Genie, Rocky, Peedy, F1, Genius et Rover XP" width="760">
 </div>
 
 Les assistants animés classiques de Windows fonctionnent directement, avec des dizaines d'animations chacun. Les voici au travail pendant que l'application transcrit et reformule une dictée :
 
 <div align="center">
-<img src="docs/img/fr/characters.png" alt="Clippy, Merlin, Genie, Links et Peedy jouent leur animation de traitement" width="100%">
+<img src="docs/img/fr/characters.png" alt="Clippy, Merlin, Genie, Peedy et F1 jouent leur animation de traitement" width="100%">
 </div>
 
-- **Clippy, Merlin, Genie, Links, Rocky, Peedy, F1, Genius, Rover XP…** utilisent le format clippy.js. Ce sont des créations de Microsoft : elles ne sont **pas incluses** dans ce dépôt ; téléchargez-les sur votre machine, pour votre usage personnel, avec :
+- **Clippy, Merlin, Genie, Rocky, Peedy, F1, Genius, Rover XP…** utilisent le format clippy.js. Ce sont des créations de Microsoft : elles ne sont **pas incluses** dans ce dépôt ; téléchargez-les sur votre machine, pour votre usage personnel, avec :
   ```powershell
   .venv\Scripts\python tools\get_agents.py --list
   .venv\Scripts\python tools\get_agents.py Clippy Merlin Genie
@@ -138,6 +138,7 @@ Tout ce que vous changez dans la fenêtre de réglages est enregistré dans `set
 {
   "ui_language": "auto",        // "auto" suit Windows, ou "en" / "fr"
   "language": "fr",             // langue de dictée : "en" ou "fr" (aussi le sélecteur FR/EN du panneau)
+  "insert": "type",             // "type" tape au niveau du curseur ; "copy" met seulement le texte dans le presse-papiers (Ctrl+V)
   "whisper_model": "base",      // "tiny", "base", "small", "medium"… plus gros = plus précis, plus lent
   "quotas_url": "",             // service de consommation optionnel, voir plus bas
   "codex": {
@@ -208,6 +209,8 @@ Ajouter une langue : traduisez les textes dans `i18n.py` (un test vérifie que c
 | *« Modèle Whisper indisponible »* | La première dictée a besoin d'internet pour récupérer le modèle ; lancez `install.ps1 -DownloadModel` en ligne. |
 | Ctrl+Alt+R ne fait rien | Une autre application possède ce raccourci ; cliquez sur la mascotte. |
 | Le texte part dans la mauvaise fenêtre | Cliquez dans le champ voulu *avant* de dicter ; la mascotte retient la dernière fenêtre utilisée. |
+| La saisie est peu fiable dans une application | Mettez `"insert": "copy"` : le texte va dans le presse-papiers et vous le collez vous-même. Le panneau a aussi un bouton **Copier** et le menu du clic droit propose *Copier le dernier texte*. |
+| Une partie de mon brouillon a été remplacée | Le texte est tapé au niveau du curseur : un passage *sélectionné* est remplacé, comme avec n'importe quelle saisie. La mascotte ne prend jamais le focus du clavier quand on clique dessus, donc votre curseur et votre brouillon restent intacts. |
 | Un plantage | Consultez `rover.log` à côté de `rover.py`. |
 
 ## Confidentialité et sécurité

@@ -34,10 +34,11 @@ prefs.SETTINGS_FILE = workdir / "settings.json"
 prefs.MASCOT_DIR = workdir / "mascots"
 prefs.codex_pets = lambda: []          # never show third-party artwork in public images
 prefs.MASCOT_DIR.mkdir(parents=True)
-ORDER = ["Clippy", "Merlin", "Genie", "Links", "Rocky", "Peedy", "F1", "Genius", "Rover"]
+ORDER = ["Clippy", "Merlin", "Genie", "Rocky", "Peedy", "F1", "Genius", "Rover"]
+EXCLUDE = {"Links"}           # not shown in the documentation images
 DISPLAY = {"Rover": "Rover XP"}
 # Classic assistants are only present if installed with tools/get_agents.py; nothing third-party is ever committed.
-PACKS = [] if args.plain else sorted((p for p in (ROOT / "mascots").glob("*") if (p / "agent.js").is_file() and (p / "map.png").is_file()),
+PACKS = [] if args.plain else sorted((p for p in (ROOT / "mascots").glob("*") if (p / "agent.js").is_file() and (p / "map.png").is_file() and p.name not in EXCLUDE),
                                      key=lambda p: ORDER.index(p.name) if p.name in ORDER else 99)
 for pack_folder in PACKS:
     shutil.copytree(pack_folder, prefs.MASCOT_DIR / pack_folder.name)
@@ -175,7 +176,7 @@ try:
     # ---- the classic characters at work (processing animation)
     strip = []
     for pack_folder in PACKS:
-        if pack_folder.name not in ("Clippy", "Merlin", "Genie", "Links", "Peedy"):
+        if pack_folder.name not in ("Clippy", "Merlin", "Genie", "Peedy", "F1"):
             continue
         app.update_pref(mascot="pack:" + pack_folder.name)
         app.set_revealed(False)
