@@ -1,0 +1,5 @@
+Pillow>=10.0
+numpy>=1.26
+requests>=2.31
+sounddevice>=0.4.6
+faster-whisper>=1.0

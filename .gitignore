@@ -1,0 +1,20 @@
+# environments and caches
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# downloaded or personal data: never committed
+/models/
+/mascots/
+settings.json
+settings.tmp
+rover.log
+assets/icons/
+assets/rover.png
+/design/
+
+# build output
+dist/
+*.egg-info/
+assets/rover.ico

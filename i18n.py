@@ -1,0 +1,155 @@
+"""Translation layer: the code is written in English; this module holds the French strings."""
+
+from __future__ import annotations
+
+import ctypes
+
+LANG = "en"
+
+FR = {
+    "Codex pet": "Mascotte Codex",
+    "Dictate / stop · Ctrl+Alt+R": "Dicter / arrêter · Ctrl+Alt+R",
+    "Customize…": "Personnalisation…",
+    "Open Bloub": "Ouvrir Bloub",
+    "Open Claude usage": "Ouvrir Claude Usage",
+    "Quit": "Quitter",
+    "Ctrl+Alt+R shortcut unavailable; click the mascot": "Raccourci Ctrl+Alt+R indisponible ; clique sur la mascotte",
+    "The field changed: click to insert.": "Le champ a changé : clique pour insérer.",
+    "Prompt inserted · nothing was sent": "Prompt inséré · aucun message envoyé",
+    "Could not find the original field. Text kept.": "Impossible de retrouver le champ initial. Texte conservé.",
+    "Click in the field where the prompt should go first": "Clique d’abord dans le champ où insérer le prompt",
+    "USAGE": "CONSOMMATION",
+    "Reading…": "Lecture…",
+    "Incomplete data": "Données incomplètes",
+    "Data may be out of date": "Données potentiellement anciennes",
+    "Local account detected · quota unavailable": "Compte local détecté · quota indisponible",
+    "View usage ↗": "Voir la consommation ↗",
+    "DICTATION": "DICTÉE",
+    "Ready": "Prêt",
+    "Listening…": "J’écoute…",
+    "Microphone on": "Micro actif",
+    "A few seconds": "Quelques secondes",
+    "Processing": "Traitement",
+    "Text ready": "Texte prêt",
+    "Check before inserting": "Vérifiez avant insertion",
+    "Error": "Erreur",
+    "Nothing was inserted": "Rien n’a été inséré",
+    "Click the mascot or use the shortcut, then speak. The text is inserted into the active field and never sent.": "Clique sur la mascotte ou utilise le raccourci, puis parle. Le texte est inséré dans le champ actif, sans jamais être envoyé.",
+    "Local Whisper  ·  Codex rewrite": "Whisper local  ·  Reformulation Codex",
+    "● Recording": "● Enregistrement",
+    "Click again to finish.": "Clique à nouveau pour terminer.",
+    "Local transcription (Whisper)": "Transcription locale (Whisper)",
+    "Rewriting (Codex)…": "Reformulation (Codex)…",
+    "Text ready to insert": "Texte prêt à insérer",
+    "Insert into field": "Insérer dans le champ",
+    "Cancel": "Annuler",
+    "Dictation failed": "Dictée impossible",
+    "Rewrite failed": "Reformulation impossible",
+    "Retry": "Réessayer",
+    "Insert raw text": "Insérer le texte brut",
+    "SETTINGS": "RÉGLAGES",
+    "Customization": "Personnalisation",
+    "Reset": "Réinitialiser",
+    "Save": "Enregistrer",
+    "LIVE PREVIEW": "APERÇU EN DIRECT",
+    "Shortcuts on the right": "Raccourcis à droite",
+    "Display": "Affichage",
+    "Mascot": "Mascotte",
+    "Size": "Taille",
+    "Animated SVG avatar; opens in your browser.": "Avatar SVG animé ; s’ouvre dans le navigateur.",
+    "Open Bloub ↗": "Ouvrir Bloub ↗",
+    "Image: transparent background recommended. Pack: clippy.js-style folder (agent.js + map.png).": "Image : fond transparent conseillé. Pack : dossier au format clippy.js (agent.js + map.png).",
+    "Default": "Par défaut",
+    "Dot only": "Point seul",
+    "Imported": "Importée",
+    "Animated pack": "Pack animé",
+    "Import": "Importer",
+    "clippy.js folder": "Dossier clippy.js",
+    "Import a pack": "Importer un pack",
+    "Import a mascot": "Importer une mascotte",
+    "Import failed": "Import impossible",
+    "Choose the pack folder (agent.js and map.png)": "Choisir le dossier du pack (agent.js et map.png)",
+    "Add a shortcut…": "Ajouter un raccourci…",
+    "Add a shortcut": "Ajouter un raccourci",
+    "Website, local service or program": "Site, service local ou programme",
+    "Choose a program or shortcut": "Choisir un programme ou un raccourci",
+    "Programs and shortcuts": "Programmes et raccourcis",
+    "All files": "Tous les fichiers",
+    "Choose a folder": "Choisir un dossier",
+    "File…": "Fichier…",
+    "Folder…": "Dossier…",
+    "E.g. https://chatgpt.com, http://localhost:3000, C:\\Program Files\\App\\app.exe": "Ex. : https://chatgpt.com, http://localhost:3000, C:\\Programmes\\App\\app.exe",
+    "Name (optional)": "Nom (facultatif)",
+    "Address, program or folder not found": "Adresse, programme ou dossier introuvable",
+    "Add": "Ajouter",
+    "Right": "Droite",
+    "Left": "Gauche",
+    "Light": "Clair",
+    "Dark": "Sombre",
+    "Theme": "Thème",
+    "AI shortcuts": "Raccourcis IA",
+    "Data up to date · {time}": "Données à jour · {time}",
+    "{label} · used": "{label} · utilisé",
+    "Resets {date}": "Se réinitialise le {date}",
+    "Additional credits: {amount}": "Crédits additionnels : {amount}",
+    "{plan} account": "Compte {plan}",
+    "Dictation in French": "Dictée en français",
+    "Dictation in English": "Dictée en anglais",
+    "Open {name}": "Ouvrir {name}",
+    "Remove {name}": "Retirer {name}",
+    "Could not open {name}": "Impossible d’ouvrir {name}",
+    "Current size: {size} px": "Taille actuelle : {size} px",
+    "Up to {count} shortcuts: remove one first": "{count} raccourcis au maximum : retire-en un d’abord",
+    "Small": "Petit",
+    "Medium": "Moyen",
+    "Large": "Grand",
+    "Extra large": "Très grand",
+    "Interface language": "Langue de l’interface",
+    "Unknown": "Inconnu",
+    "Secondary": "Secondaire",
+    "Weekly": "Hebdomadaire",
+    "{n}-day window": "Fenêtre {n} j",
+    "{n} h window": "Fenêtre {n} h",
+    "{n} min window": "Fenêtre {n} min",
+    "Quota service unavailable": "Service de quotas indisponible",
+    "Quotas not configured (see the README: quotas_url)": "Quotas non configurés (voir le README : quotas_url)",
+    "No account in the quota service": "Aucun compte dans le service de quotas",
+    "Local account detected · balance not accessible": "Compte local détecté · solde non accessible",
+    "The dictation is empty": "La dictée est vide",
+    "Codex profile not found": "Profil Codex introuvable",
+    "Codex CLI not found": "CLI Codex introuvable",
+    "Codex unavailable: {detail}": "Codex indisponible : {detail}",
+    "command interrupted": "commande interrompue",
+    "Codex returned an empty answer": "Codex a renvoyé une réponse vide",
+    "No sound received from the microphone": "Aucun son reçu du microphone",
+    "No voice detected": "Aucune voix détectée",
+    "No speech recognised": "Aucune parole reconnue",
+    "Transcribing…": "Transcription…",
+    "Speak… then click Rover again": "Parle… puis reclique sur Rover",
+    "Microphone unavailable: {detail}": "Microphone inaccessible : {detail}",
+    "Whisper model unavailable: {detail}": "Modèle Whisper indisponible : {detail}",
+}
+
+
+def system_language() -> str:
+    """'fr' when Windows is set to French, otherwise 'en'."""
+    try:
+        identifier = ctypes.windll.kernel32.GetUserDefaultUILanguage()
+    except (AttributeError, OSError):
+        return "en"
+    return "fr" if (identifier & 0xFF) == 0x0C else "en"
+
+
+def resolve(choice: str) -> str:
+    return choice if choice in ("fr", "en") else system_language()
+
+
+def set_language(choice: str) -> str:
+    global LANG
+    LANG = resolve(choice)
+    return LANG
+
+
+def tr(text: str) -> str:
+    """Translate an English source string into the current interface language."""
+    return FR.get(text, text) if LANG == "fr" else text
