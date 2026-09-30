@@ -33,12 +33,16 @@ workdir = Path(tempfile.mkdtemp())
 prefs.SETTINGS_FILE = workdir / "settings.json"
 prefs.MASCOT_DIR = workdir / "mascots"
 prefs.codex_pets = lambda: []          # never show third-party artwork in public images
-shutil.copytree(ROOT / "examples" / "mascots", prefs.MASCOT_DIR)
-hero_mascot = "rover"
-clippy = ROOT / "mascots" / "Clippy"            # only present if the user installed it (tools/get_agents.py)
-if (clippy / "agent.js").is_file() and not args.plain:
-    shutil.copytree(clippy, prefs.MASCOT_DIR / "Clippy")
-    hero_mascot = "pack:Clippy"
+prefs.MASCOT_DIR.mkdir(parents=True)
+ORDER = ["Clippy", "Merlin", "Genie", "Links", "Rocky", "Peedy", "F1", "Genius", "Rover"]
+DISPLAY = {"Rover": "Rover XP"}
+# Classic assistants are only present if installed with tools/get_agents.py; nothing third-party is ever committed.
+PACKS = [] if args.plain else sorted((p for p in (ROOT / "mascots").glob("*") if (p / "agent.js").is_file() and (p / "map.png").is_file()),
+                                     key=lambda p: ORDER.index(p.name) if p.name in ORDER else 99)
+for pack_folder in PACKS:
+    shutil.copytree(pack_folder, prefs.MASCOT_DIR / pack_folder.name)
+hero_mascot = "pack:Clippy" if any(p.name == "Clippy" for p in PACKS) else "rover"
+clippy = ROOT / "mascots" / "Clippy"
 prefs.SETTINGS_FILE.write_text(json.dumps({"ui_language": args.lang, "language": args.lang, "theme": args.theme, "size": 144,
                                            "mascot": hero_mascot}))
 
@@ -168,10 +172,42 @@ try:
     app.settings_window.close()
     pump(0.3)
 
+    # ---- the classic characters at work (processing animation)
+    strip = []
+    for pack_folder in PACKS:
+        if pack_folder.name not in ("Clippy", "Merlin", "Genie", "Links", "Peedy"):
+            continue
+        app.update_pref(mascot="pack:" + pack_folder.name)
+        app.set_revealed(False)
+        app.finish_animations()
+        app.busy = True
+        app.step = "codex"
+        app.update_status_visuals()
+        app.open_dictation()
+        app.finish_animations()
+        pump(1.1)
+        mx0, my0, mx1, my1 = window_rect(app.root)
+        dx0, dy0, dx1, dy1 = window_rect(app.dictation.win)
+        strip.append(grab((dx0 - 10, my0 - 18, dx1 + 10, dy1 + 10)))
+        app.busy = False
+        app.dictation.hide()
+        app.update_status_visuals()
+    if strip:
+        strip_sheet = Image.new("RGB", (sum(s_.width for s_ in strip) + 14 * (len(strip) - 1), max(s_.height for s_ in strip)), (20, 20, 24))
+        x_cursor = 0
+        for shot in strip:
+            strip_sheet.paste(shot, (x_cursor, 0))
+            x_cursor += shot.width + 14
+        strip_sheet.save(out / "characters.png")
+    app.update_pref(mascot=hero_mascot)
+    app.set_revealed(False)
+    app.finish_animations()
+    pump(0.4)
+
     # ---- animated demo
     if args.gif:
         frames: list[Image.Image] = []
-        region = (box_x + 60, box_y + 20, box_x + 540, box_y + HEIGHT - 10)
+        region = (box_x, box_y, box_x + WIDTH, box_y + HEIGHT)      # same frame as hero.png, so both display at the same size
 
         def record(seconds: float, each=None, fps: float = 12):
             end = time.monotonic() + seconds
@@ -252,21 +288,34 @@ def font(size, bold=False):
 
 dark = args.theme == "dark"
 bg, fg, sub = ((22, 23, 28), (242, 242, 240), (163, 163, 168)) if dark else ((250, 246, 238), (43, 38, 32), (103, 94, 83))
+import math       # noqa: E402
+
 import mascots as mascot_lib   # noqa: E402
 
-entries = [("Rover", Image.open(ROOT / "assets" / "mascot-default.png").convert("RGBA").crop((0, 0, 192, 208)), "9 animations")]
-entries += [(name.replace("pup-", "Pup ").title(), Image.open(ROOT / "examples" / "mascots" / f"{name}.png").convert("RGBA").crop((0, 0, 192, 208)),
-             "9 animations") for name in ("pup-blue", "pup-green", "pup-violet", "pup-pink")]
-if hero_mascot != "rover":
-    clip_preview = mascot_lib.pack_preview(clippy, (192, 208))
-    if clip_preview is not None:
-        entries.insert(0, ("Clippy", clip_preview, "44 animations"))
-gallery = Image.new("RGB", (len(entries) * 170 + 30, 250), bg)
+
+def animation_count(folder: Path) -> int:
+    text = (folder / "agent.js").read_text(encoding="utf-8")
+    return len(json.loads(text[text.index("{"): text.rindex("}") + 1])["animations"])
+
+
+entries = []
+for pack_folder in PACKS:
+    preview = mascot_lib.pack_preview(pack_folder, (192, 208))
+    if preview is not None:
+        entries.append((DISPLAY.get(pack_folder.name, pack_folder.name), preview, f"{animation_count(pack_folder)} animations"))
+if not entries:
+    entries.append(("Rover", Image.open(ROOT / "assets" / "mascot-default.png").convert("RGBA").crop((0, 0, 192, 208)), "9 animations"))
+columns = min(5, len(entries))
+rows = math.ceil(len(entries) / columns)
+gallery = Image.new("RGB", (columns * 176 + 32, rows * 250 + 24), bg)
 draw = ImageDraw.Draw(gallery)
 for index, (label, sprite, caption) in enumerate(entries):
+    col, row = index % columns, index // columns
+    left_ = 32 + col * 176
+    top_ = 20 + row * 250
     cell = sprite.resize((144, 156), Image.Resampling.LANCZOS)
-    gallery.paste(cell, (30 + index * 170 - 2, 24), cell)
-    draw.text((30 + index * 170 + 70, 204), label, font=font(17, True), fill=fg, anchor="mm")
-    draw.text((30 + index * 170 + 70, 228), caption, font=font(13), fill=sub, anchor="mm")
+    gallery.paste(cell, (left_ - 8, top_), cell)
+    draw.text((left_ + 64, top_ + 178), label, font=font(17, True), fill=fg, anchor="mm")
+    draw.text((left_ + 64, top_ + 202), caption, font=font(13), fill=sub, anchor="mm")
 gallery.save(out / "mascots.png")
 print("images written to", out)

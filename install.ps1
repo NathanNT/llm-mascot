@@ -57,13 +57,7 @@ Write-Step "Installing dependencies (this can take a few minutes the first time)
 & $venvPython -m pip install --upgrade pip --quiet
 & $venvPython -m pip install -r (Join-Path $root "requirements.txt")
 
-Write-Step "Adding the example mascots"
-$mascots = Join-Path $root "mascots"
-New-Item -ItemType Directory -Force -Path $mascots | Out-Null
-Get-ChildItem (Join-Path $root "examples\mascots") -Filter *.png | ForEach-Object {
-    $target = Join-Path $mascots $_.Name
-    if (-not (Test-Path $target)) { Copy-Item $_.FullName $target }
-}
+New-Item -ItemType Directory -Force -Path (Join-Path $root "mascots") | Out-Null
 
 if ($DownloadModel) {
     Write-Step "Downloading the speech model"

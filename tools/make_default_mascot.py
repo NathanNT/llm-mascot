@@ -213,27 +213,13 @@ def build() -> Image.Image:
     return sheet
 
 
-def recolor(sheet: Image.Image, shift: float) -> Image.Image:
-    """Hue-shifted copy (fur only keeps its look: the warm orange range is rotated, the red collar with it)."""
-    hsv = sheet.convert("RGB").convert("HSV")
-    hue, sat, val = hsv.split()
-    hue = hue.point(lambda v: int((v + shift * 255) % 256))
-    shifted = Image.merge("HSV", (hue, sat, val)).convert("RGB")
-    shifted.putalpha(sheet.getchannel("A"))
-    return shifted
-
-
 if __name__ == "__main__":
     root = Path(__file__).resolve().parent.parent
     atlas = build()
     (root / "assets").mkdir(exist_ok=True)
     atlas.save(root / "assets" / "mascot-default.png", optimize=True)
-    examples = root / "examples" / "mascots"
-    examples.mkdir(parents=True, exist_ok=True)
-    for name, shift in (("pup-blue", 0.52), ("pup-green", 0.25), ("pup-violet", 0.72), ("pup-pink", 0.88)):
-        recolor(atlas, shift).save(examples / f"{name}.png", optimize=True)
     icon_cell = atlas.crop((0, 0, W, H)).resize((240, 260), Image.Resampling.LANCZOS)
     square = Image.new("RGBA", (260, 260), (0, 0, 0, 0))
     square.alpha_composite(icon_cell, (10, 0))
     square.save(root / "assets" / "mascot.ico", sizes=[(256, 256), (128, 128), (64, 64), (48, 48), (32, 32), (16, 16)])
-    print("written", root / "assets" / "mascot-default.png", "and", examples)
+    print("written", root / "assets" / "mascot-default.png")

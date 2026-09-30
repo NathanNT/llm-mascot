@@ -14,9 +14,9 @@ Talk to it, it transcribes on your PC, optionally polishes the text with Codex, 
 
 **English** · [Français](README.fr.md)
 
-<img src="docs/img/en/demo.gif" alt="Animated demo: hover the mascot, check usage, dictate" width="300">
+<img src="docs/img/en/demo.gif" alt="Animated demo: hover the mascot, check usage, dictate" width="360">
 &nbsp;&nbsp;
-<img src="docs/img/en/hero.png" alt="The mascot with its usage panel, dictation panel and AI shortcuts" width="400">
+<img src="docs/img/en/hero.png" alt="The mascot with its usage panel, dictation panel and AI shortcuts" width="360">
 
 </div>
 
@@ -24,16 +24,16 @@ Talk to it, it transcribes on your PC, optionally polishes the text with Codex, 
 
 ## ✨ What you get
 
-| | |
+| Feature | Details |
 |---|---|
-| 🎙️ **Dictation anywhere** | Click the mascot or press **Ctrl+Alt+R**, speak, click again. French and English, transcribed **locally** with [faster-whisper](https://github.com/SYSTRAN/faster-whisper). |
-| ✍️ **Inserted, never sent** | The text is typed into the field that had focus (no clipboard, no Enter key). If you switched windows, a button lets you insert it later. |
-| 🧠 **Optional Codex polish** | With the Codex CLI signed in, the raw transcript is rewritten into a clean prompt. Without it, the raw text is inserted. |
-| 📊 **Usage at a glance** | Hover the gauge to see Codex usage windows, reset times and credits. Claude shows a one-click link to its usage page — no invented numbers. |
-| 🚀 **AI shortcut rail** | Round buttons for Claude, ChatGPT and **anything you add**: a website, a local web app, a program, a folder. Icons are fetched automatically. |
-| 🎭 **Real personality** | Nine reactions per mascot: it waves when you arrive, listens while you talk, reads while it thinks, jumps on success, collapses on errors, runs while you drag it. |
-| 🎨 **Make it yours** | Change mascot, size, theme (dark / warm light), side of the rail and language (English / Français) from a built-in settings window. |
-| 🔒 **Private by design** | Audio never leaves your PC, nothing is stored on disk, no telemetry. |
+| **Dictation anywhere** | Click the mascot or press **Ctrl+Alt+R**, speak, click again. French and English, transcribed **locally** with [faster-whisper](https://github.com/SYSTRAN/faster-whisper). |
+| **Inserted, never sent** | The text is typed into the field that had focus (no clipboard, no Enter key). If you switched windows, a button lets you insert it later. |
+| **Optional Codex polish** | With the Codex CLI signed in, the raw transcript is rewritten into a clean prompt. Without it, the raw text is inserted. |
+| **Usage at a glance** | Hover the gauge to see Codex usage windows, reset times and credits. Claude shows a one-click link to its usage page — no invented numbers. |
+| **AI shortcut rail** | Round buttons for Claude, ChatGPT and **anything you add**: a website, a local web app, a program, a folder. Icons are fetched automatically. |
+| **Real personality** | Nine reactions per mascot: it waves when you arrive, listens while you talk, reads while it thinks, jumps on success, collapses on errors, runs while you drag it. |
+| **Make it yours** | Change mascot, size, theme (dark / warm light), side of the rail and language (English / Français) from a built-in settings window. |
+| **Private by design** | Audio never leaves your PC, nothing is stored on disk, no telemetry. |
 
 ## 🚀 Install in one minute
 
@@ -56,7 +56,7 @@ Or download the ZIP from GitHub, extract it and double-click **`install.bat`**. 
 
 > The speech model is downloaded once, the first time you dictate. After that everything works offline.
 
-## 🖱️ How to use it
+## How to use it
 
 1. **Hover the mascot** – it waves and reveals two round buttons and the shortcut rail.
 2. **Hover the gauge** (above) to open the **usage** panel. **Hover the microphone** (below) to open the **dictation** panel.
@@ -72,17 +72,23 @@ Or download the ZIP from GitHub, extract it and double-click **`install.bat`**. 
 ## 🎭 Mascots
 
 <div align="center">
-<img src="docs/img/en/mascots.png" alt="Bundled mascots and Clippy" width="760">
+<img src="docs/img/en/mascots.png" alt="The classic Windows assistants: Clippy, Merlin, Genie, Links, Rocky, Peedy, F1, Genius and Rover XP" width="760">
 </div>
 
-- **Rover** (default) and four colour variants are original artwork, bundled with the project and released under MIT.
-- **Your own images** – PNG, GIF or WebP dropped in `mascots/` (or imported from the settings window). A 1536 × 1872 PNG laid out like the bundled atlas plays all nine reactions.
-- **Classic animated assistants** (Clippy, Merlin, Genie, Links, Rocky, Peedy, F1, Genius…) in the clippy.js format, such as the Clippy shown above. They are Microsoft's artwork, so they are **not included**; fetch them for your own use with:
+The classic animated Windows assistants work out of the box, each with dozens of animations. Here they are at work while the app transcribes and rewrites a dictation:
+
+<div align="center">
+<img src="docs/img/en/characters.png" alt="Clippy, Merlin, Genie, Links and Peedy playing their processing animations" width="100%">
+</div>
+
+- **Clippy, Merlin, Genie, Links, Rocky, Peedy, F1, Genius, Rover XP…** use the clippy.js format. They are Microsoft's artwork, so they are **not included** in this repository; download them onto your own machine, for your own use, with:
   ```powershell
   .venv\Scripts\python tools\get_agents.py --list
-  .venv\Scripts\python tools\get_agents.py Clippy Merlin
+  .venv\Scripts\python tools\get_agents.py Clippy Merlin Genie
   ```
-  They receive the same events (greeting, listening, processing, congratulation, alert…) and play their idle animations at random.
+  They receive the same events as every mascot (greeting, listening, processing, congratulation, alert…) and play their idle animations at random.
+- **A bundled fallback** – a simple original dog (nine reactions) so the app works before you download anything.
+- **Your own images** – PNG, GIF or WebP dropped in `mascots/` (or imported from the settings window). A 1536 × 1872 PNG laid out like the atlas below plays all nine reactions.
 - **Codex pets** – if the Codex extension is installed, its pets appear automatically in the settings window (they are read in place, never copied).
 
 <details>
@@ -105,7 +111,7 @@ An atlas is a transparent PNG of **8 columns × 9 rows of 192 × 208 px cells** 
 `python tools/make_default_mascot.py` regenerates the bundled atlas and is a good starting point.
 </details>
 
-## 🚀 Shortcut rail
+## Shortcut rail
 
 The rail on the side of the mascot opens your AI tools in one click. Press **＋** (or use *Customize → Shortcuts*) and enter:
 
@@ -119,7 +125,12 @@ The icon is the site's favicon or the file's Windows icon. Right-click a button 
 <img src="docs/img/en/settings.png" alt="The customization window" width="640">
 </div>
 
-## ⚙️ Configuration
+<div align="center">
+Dark by default, with a warm light theme:<br>
+<img src="docs/img/en-light/hero.png" alt="Light theme" width="240">
+</div>
+
+## Configuration
 
 Everything you change in the settings window is saved to `settings.json` (next to `rover.py`, never committed). A few advanced options are only in the file:
 
@@ -160,7 +171,7 @@ The panel reads **local** JSON from `quotas_url`, which any small service of you
 
 Without `quotas_url` the panel says so and the rest of the app works normally. Claude's plan usage is not exposed by any local API, so the panel only links to [claude.ai/settings/usage](https://claude.ai/settings/usage) when a local Claude install is detected.
 
-## 🧱 How it is built
+## How it is built
 
 ```
 rover.py        the application: windows, hover logic, dictation flow, settings window
@@ -178,7 +189,7 @@ tests/unit      headless tests (run in CI)        tests/gui   checks that need a
 
 Design notes: windows are borderless top-levels; buttons and the rail are true per-pixel-alpha layered windows, bubbles use a colour key with crisp edges so Tk widgets can live inside them.
 
-## 🛠️ Development
+## Development
 
 ```powershell
 python -m venv .venv
@@ -191,7 +202,7 @@ python -m venv .venv
 
 Adding a language: translate the strings in `i18n.py` (a unit test checks that every `tr("…")` string has a translation).
 
-## ❓ Troubleshooting
+## Troubleshooting
 
 | Symptom | Fix |
 |---|---|
@@ -201,14 +212,14 @@ Adding a language: translate the strings in `i18n.py` (a unit test checks that e
 | The text is typed in the wrong window | Click in the target field *before* dictating; the mascot remembers the last window you used. |
 | Something crashed | Look at `rover.log` next to `rover.py`. |
 
-## 🔐 Privacy & security
+## Privacy & security
 
 - Audio is processed in memory by a local model and is never written to disk or uploaded.
 - Prompts are not stored. The optional Codex rewrite sends the **transcript text** to OpenAI through your own Codex session, like any Codex prompt.
 - Account credentials stay in their usual places; the app never reads them.
 - Shortcut icons are fetched only from the addresses you add.
 
-## 📜 License and credits
+## License and credits
 
 MIT © NathanNT. See [`LICENSE`](LICENSE) and [`NOTICE.md`](NOTICE.md).
 

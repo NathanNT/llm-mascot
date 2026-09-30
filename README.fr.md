@@ -14,9 +14,9 @@ Parlez-lui : elle transcrit sur votre PC, reformule au besoin avec Codex, puis d
 
 [English](README.md) · **Français**
 
-<img src="docs/img/fr/demo.gif" alt="Démo animée : survoler la mascotte, consulter la consommation, dicter" width="300">
+<img src="docs/img/fr/demo.gif" alt="Démo animée : survoler la mascotte, consulter la consommation, dicter" width="360">
 &nbsp;&nbsp;
-<img src="docs/img/fr/hero.png" alt="La mascotte avec ses panneaux de consommation, de dictée et ses raccourcis IA" width="400">
+<img src="docs/img/fr/hero.png" alt="La mascotte avec ses panneaux de consommation, de dictée et ses raccourcis IA" width="360">
 
 </div>
 
@@ -24,16 +24,16 @@ Parlez-lui : elle transcrit sur votre PC, reformule au besoin avec Codex, puis d
 
 ## ✨ Ce que vous obtenez
 
-| | |
+| Fonction | Détails |
 |---|---|
-| 🎙️ **Dictée partout** | Cliquez sur la mascotte ou appuyez sur **Ctrl+Alt+R**, parlez, recliquez. Français et anglais, transcription **locale** avec [faster-whisper](https://github.com/SYSTRAN/faster-whisper). |
-| ✍️ **Inséré, jamais envoyé** | Le texte est tapé dans le champ qui avait le focus (ni presse-papiers, ni touche Entrée). Si vous avez changé de fenêtre, un bouton permet de l'insérer plus tard. |
-| 🧠 **Reformulation Codex optionnelle** | Avec le CLI Codex connecté, la transcription brute devient un prompt propre. Sans lui, le texte brut est inséré. |
-| 📊 **Consommation d'un coup d'œil** | Survolez la jauge : fenêtres d'usage Codex, échéances, crédits. Pour Claude, un lien vers sa page de consommation — aucun chiffre inventé. |
-| 🚀 **Rail de raccourcis IA** | Des boutons ronds pour Claude, ChatGPT et **tout ce que vous ajoutez** : un site, une appli web locale, un programme, un dossier. Les icônes sont récupérées automatiquement. |
-| 🎭 **Une vraie personnalité** | Neuf réactions par mascotte : elle salue à votre arrivée, écoute pendant que vous parlez, lit pendant qu'elle réfléchit, saute en cas de succès, s'effondre en cas d'erreur et court quand on la déplace. |
-| 🎨 **À votre image** | Mascotte, taille, thème (sombre / clair chaleureux), côté du rail et langue (English / Français) se règlent dans une fenêtre intégrée. |
-| 🔒 **Privé par conception** | L'audio ne quitte jamais votre PC, rien n'est enregistré sur disque, aucune télémétrie. |
+| **Dictée partout** | Cliquez sur la mascotte ou appuyez sur **Ctrl+Alt+R**, parlez, recliquez. Français et anglais, transcription **locale** avec [faster-whisper](https://github.com/SYSTRAN/faster-whisper). |
+| **Inséré, jamais envoyé** | Le texte est tapé dans le champ qui avait le focus (ni presse-papiers, ni touche Entrée). Si vous avez changé de fenêtre, un bouton permet de l'insérer plus tard. |
+| **Reformulation Codex optionnelle** | Avec le CLI Codex connecté, la transcription brute devient un prompt propre. Sans lui, le texte brut est inséré. |
+| **Consommation d'un coup d'œil** | Survolez la jauge : fenêtres d'usage Codex, échéances, crédits. Pour Claude, un lien vers sa page de consommation — aucun chiffre inventé. |
+| **Rail de raccourcis IA** | Des boutons ronds pour Claude, ChatGPT et **tout ce que vous ajoutez** : un site, une appli web locale, un programme, un dossier. Les icônes sont récupérées automatiquement. |
+| **Une vraie personnalité** | Neuf réactions par mascotte : elle salue à votre arrivée, écoute pendant que vous parlez, lit pendant qu'elle réfléchit, saute en cas de succès, s'effondre en cas d'erreur et court quand on la déplace. |
+| **À votre image** | Mascotte, taille, thème (sombre / clair chaleureux), côté du rail et langue (English / Français) se règlent dans une fenêtre intégrée. |
+| **Privé par conception** | L'audio ne quitte jamais votre PC, rien n'est enregistré sur disque, aucune télémétrie. |
 
 ## 🚀 Installation en une minute
 
@@ -56,7 +56,7 @@ Ou téléchargez le ZIP depuis GitHub, extrayez-le et double-cliquez sur **`inst
 
 > Le modèle vocal se télécharge une seule fois, à la première dictée. Ensuite tout fonctionne hors ligne.
 
-## 🖱️ Utilisation
+## Utilisation
 
 1. **Survolez la mascotte** : elle salue et fait apparaître deux boutons ronds et le rail de raccourcis.
 2. **Survolez la jauge** (au-dessus) pour ouvrir le panneau de **consommation**. **Survolez le micro** (en dessous) pour ouvrir le panneau de **dictée**.
@@ -72,17 +72,23 @@ Ou téléchargez le ZIP depuis GitHub, extrayez-le et double-cliquez sur **`inst
 ## 🎭 Mascottes
 
 <div align="center">
-<img src="docs/img/fr/mascots.png" alt="Mascottes fournies et Clippy" width="760">
+<img src="docs/img/fr/mascots.png" alt="Les assistants Windows classiques : Clippy, Merlin, Genie, Links, Rocky, Peedy, F1, Genius et Rover XP" width="760">
 </div>
 
-- **Rover** (par défaut) et quatre variantes de couleur sont des créations originales, fournies avec le projet sous licence MIT.
-- **Vos propres images** : PNG, GIF ou WebP déposés dans `mascots/` (ou importés depuis la fenêtre de réglages). Un PNG de 1536 × 1872 organisé comme l'atlas fourni joue les neuf réactions.
-- **Assistants animés classiques** (Clippy, Merlin, Genie, Links, Rocky, Peedy, F1, Genius…) au format clippy.js, comme le Clippy ci-dessus. Ce sont des créations de Microsoft : elles ne sont **pas incluses** ; récupérez-les pour votre usage personnel avec :
+Les assistants animés classiques de Windows fonctionnent directement, avec des dizaines d'animations chacun. Les voici au travail pendant que l'application transcrit et reformule une dictée :
+
+<div align="center">
+<img src="docs/img/fr/characters.png" alt="Clippy, Merlin, Genie, Links et Peedy jouent leur animation de traitement" width="100%">
+</div>
+
+- **Clippy, Merlin, Genie, Links, Rocky, Peedy, F1, Genius, Rover XP…** utilisent le format clippy.js. Ce sont des créations de Microsoft : elles ne sont **pas incluses** dans ce dépôt ; téléchargez-les sur votre machine, pour votre usage personnel, avec :
   ```powershell
   .venv\Scripts\python tools\get_agents.py --list
-  .venv\Scripts\python tools\get_agents.py Clippy Merlin
+  .venv\Scripts\python tools\get_agents.py Clippy Merlin Genie
   ```
-  Elles reçoivent les mêmes événements (salutation, écoute, traitement, félicitations, alerte…) et jouent leurs animations de repos au hasard.
+  Elles reçoivent les mêmes événements que toutes les mascottes (salutation, écoute, traitement, félicitations, alerte…) et jouent leurs animations de repos au hasard.
+- **Une mascotte de secours** : un petit chien original (neuf réactions), pour que l'application fonctionne avant tout téléchargement.
+- **Vos propres images** : PNG, GIF ou WebP déposés dans `mascots/` (ou importés depuis la fenêtre de réglages). Un PNG de 1536 × 1872 organisé comme l'atlas ci-dessous joue les neuf réactions.
 - **Mascottes Codex** : si l'extension Codex est installée, ses mascottes apparaissent toutes seules dans les réglages (lues sur place, jamais copiées).
 
 <details>
@@ -105,7 +111,7 @@ Un atlas est un PNG transparent de **8 colonnes × 9 lignes de cellules de 192 �
 `python tools/make_default_mascot.py` régénère l'atlas fourni et sert de point de départ.
 </details>
 
-## 🚀 Rail de raccourcis
+## Rail de raccourcis
 
 Le rail sur le côté de la mascotte ouvre vos outils IA en un clic. Appuyez sur **＋** (ou *Personnalisation → Raccourcis*) puis saisissez :
 
@@ -119,7 +125,12 @@ L'icône est le favicon du site ou l'icône Windows du fichier. Clic droit sur u
 <img src="docs/img/fr/settings.png" alt="La fenêtre de personnalisation" width="640">
 </div>
 
-## ⚙️ Configuration
+<div align="center">
+Sombre par défaut, avec un thème clair chaleureux :<br>
+<img src="docs/img/en-light/hero.png" alt="Light theme" width="240">
+</div>
+
+## Configuration
 
 Tout ce que vous changez dans la fenêtre de réglages est enregistré dans `settings.json` (à côté de `rover.py`, jamais versionné). Quelques options avancées n'existent que dans le fichier :
 
@@ -160,7 +171,7 @@ Le panneau lit un JSON **local** à l'adresse `quotas_url`, que n'importe quel p
 
 Sans `quotas_url`, le panneau l'indique et le reste de l'application fonctionne normalement. La consommation de l'abonnement Claude n'est exposée par aucune API locale : le panneau propose seulement un lien vers [claude.ai/settings/usage](https://claude.ai/settings/usage) quand une installation locale de Claude est détectée.
 
-## 🧱 Architecture
+## Architecture
 
 ```
 rover.py        l'application : fenêtres, survol, dictée, fenêtre de réglages
@@ -176,7 +187,7 @@ tools/          aides d'installation, générateurs d'assets, rendu des captures
 tests/unit      tests sans affichage (lancés en CI)     tests/gui   vérifications sur un vrai bureau
 ```
 
-## 🛠️ Développement
+## Développement
 
 ```powershell
 python -m venv .venv
@@ -189,7 +200,7 @@ python -m venv .venv
 
 Ajouter une langue : traduisez les textes dans `i18n.py` (un test vérifie que chaque `tr("…")` a sa traduction).
 
-## ❓ Dépannage
+## Dépannage
 
 | Symptôme | Solution |
 |---|---|
@@ -199,14 +210,14 @@ Ajouter une langue : traduisez les textes dans `i18n.py` (un test vérifie que c
 | Le texte part dans la mauvaise fenêtre | Cliquez dans le champ voulu *avant* de dicter ; la mascotte retient la dernière fenêtre utilisée. |
 | Un plantage | Consultez `rover.log` à côté de `rover.py`. |
 
-## 🔐 Confidentialité et sécurité
+## Confidentialité et sécurité
 
 - L'audio est traité en mémoire par un modèle local et n'est jamais écrit sur disque ni envoyé.
 - Les prompts ne sont pas conservés. La reformulation Codex optionnelle envoie le **texte transcrit** à OpenAI via votre propre session Codex, comme n'importe quel prompt Codex.
 - Les identifiants de vos comptes restent à leur place habituelle ; l'application ne les lit jamais.
 - Les icônes des raccourcis ne sont récupérées qu'aux adresses que vous ajoutez.
 
-## 📜 Licence et crédits
+## Licence et crédits
 
 MIT © NathanNT. Voir [`LICENSE`](LICENSE) et [`NOTICE.md`](NOTICE.md).
 

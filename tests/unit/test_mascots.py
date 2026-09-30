@@ -43,9 +43,8 @@ def test_bundled_atlas_has_every_reaction():
     assert 0 <= left < right <= mascot.size[0] and 0 <= top < bottom <= mascot.size[1]
 
 
-def test_example_mascots_are_full_atlases():
-    for path in (ROOT / "examples" / "mascots").glob("*.png"):
-        assert mascots.is_atlas(Image.open(path)), path.name
+def test_bundled_atlas_is_a_full_atlas():
+    assert mascots.is_atlas(Image.open(ROOT / "assets" / "mascot-default.png"))
 
 
 def test_pack_loader_maps_events_and_variants(tmp_path):
