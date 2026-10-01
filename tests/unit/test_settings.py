@@ -16,7 +16,7 @@ def test_defaults_when_no_file_exists():
     assert data["mascot"] == "rover" and data["theme"] == "dark"
     assert data["language"] in ("fr", "en")
     assert [a["name"] for a in data["apps"]] == ["Claude", "ChatGPT"]
-    assert data["quotas_url"] == "" and data["rewrite_provider"] == "auto" and data["rewrite_style"] == "faithful"
+    assert data["quotas_url"] == "" and data["rewrite_provider"] == "auto" and data["rewrite_style"] == "clear"
 
 
 def test_round_trip_and_atomic_write(tmp_path):

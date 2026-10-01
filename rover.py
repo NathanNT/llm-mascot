@@ -23,7 +23,9 @@ from PIL import Image, ImageDraw, ImageSequence, ImageTk
 
 import appicons
 import accel
+import codex_server
 import gpu
+import modelstore
 import layered
 import secrets_store
 import transcribe
@@ -31,13 +33,18 @@ import startup
 import styles
 import mascots
 import settings as prefs
-from core import (CLAUDE_USAGE_URL, claude_available, codex_available, format_credits, format_reset, provider_label,
+from core import (resolve_provider, start_codex_server, CLAUDE_USAGE_URL, claude_available, codex_available, format_credits, format_reset, provider_label,
                   read_quotas, rewrite_enabled, rewrite_text)
-from ui_kit import (CLAUDE_COLOR, FONT_MONO, FONT_REGULAR, FONT_SEMIBOLD, SS, THEMES, TRANSPARENT, circle_button,
+from ui_kit import (FLYOUT_DISC, flyout_image, CLAUDE_COLOR, FONT_MONO, FONT_REGULAR, FONT_SEMIBOLD, SS, THEMES, TRANSPARENT, circle_button, rg, sb, set_active,
+                    xp_button_image, xp_titlebar, orb_image, tool_button, xp_radio_image,
                     harden_edges, icon, icon_pil, letter_icon, panel_image, rail_image, rounded_box, rgb)
 from voice import Recorder
-from windows import (acquire_single_instance, consume_hotkey, foreground_window, insert_text, is_own_window,
-                     register_hotkey, unregister_hotkey, desktop_bounds, monitor_work_area, place_window)
+import launchers
+import hotkeys
+import mascot_setup
+from dictation_context import RecentDictations
+from windows import (round_top_corners, acquire_single_instance, consume_hotkey, foreground_window, insert_text, is_own_window,
+                     register_hotkey, unregister_hotkey, pressed_modifiers, desktop_bounds, monitor_work_area, place_window)
 
 HERE = Path(__file__).resolve().parent
 # A sprite atlas dropped at assets/rover.png replaces the bundled default mascot.
@@ -176,6 +183,37 @@ class ImageWindow(Animated):
         self._move()
 
 
+class Unroll(ImageWindow):
+    """A band that unrolls sideways out of the rail: it is revealed from its flat end towards its rounded end."""
+
+    DURATION = 0.11
+
+    def __init__(self, master, kick):
+        super().__init__(master, kick, cursor="hand2")
+        self.source: Image.Image | None = None
+        self.toward_right = True
+
+    def set_band(self, image: Image.Image, toward_right: bool) -> None:
+        self.source, self.toward_right = image, toward_right
+        self.set_image(image)
+
+    def _move(self):
+        if self.source is None or self.bitmap is None or not self.win.winfo_ismapped():
+            return
+        eased = 1 - (1 - self.p) ** 3
+        width, height = self.source.size
+        half = FLYOUT_DISC // 2                    # the disc that merges with the rail button is always there
+        shown = half + round((width - half) * eased)
+        if self.toward_right:
+            piece, x = self.source.crop((0, 0, shown, height)), self.base[0]
+        else:
+            piece, x = self.source.crop((width - shown, 0, width, height)), self.base[0] + width - shown
+        if getattr(self, "_piece", None) is not None:
+            self._piece.close()
+        self._piece = layered.Bitmap(piece)
+        layered.update(layered.enable(self.win, no_activate=True), self._piece, round(x), round(self.base[1]), 255)
+
+
 class Bubble(Animated):
     """Rounded, anti-aliased panel with a tail, filled with regular Tk widgets."""
 
@@ -193,6 +231,10 @@ class Bubble(Animated):
         self._image = None
         self._theme: dict | None = None
         self._body_height = 0
+        self.title = ""                       # shown in the title bar of themes that have one
+        self.on_close = None                  # called by the title bar's close button
+        self.canvas.bind("<Motion>", self._title_hover)
+        self.canvas.bind("<Button-1>", self._title_click)
 
     def rebuild(self, theme: dict, fill) -> None:
         self._theme = theme
@@ -203,6 +245,21 @@ class Bubble(Animated):
         self.body.update_idletasks()
         self._body_height = self.body.winfo_reqheight()
         self.redraw()
+
+    def _on_close_button(self, event) -> bool:
+        theme = self._theme
+        if not (theme and theme["titlebar"] and self.on_close):
+            return False
+        top = TAIL if self.tail == "up" else 0
+        frame = theme["frame_px"]
+        return (BUBBLE_W - frame - 28 <= event.x <= BUBBLE_W - frame and top + frame <= event.y <= top + frame + 28)
+
+    def _title_hover(self, event) -> None:
+        self.canvas.configure(cursor="hand2" if self._on_close_button(event) else "arrow")
+
+    def _title_click(self, event) -> None:
+        if self._on_close_button(event):
+            self.on_close()
 
     def set_mode(self, anchored: bool) -> None:
         """Anchored bubbles point at the mascot; side bubbles (no room above/below) have no tail."""
@@ -220,14 +277,16 @@ class Bubble(Animated):
 
     def redraw(self) -> None:
         theme = self._theme
-        height = self._body_height + 2 * BUBBLE_PAD
-        image, top = panel_image(BUBBLE_W, height, theme["panel"], theme["border"], tail=self.tail, tail_x=self.tail_x,
-                                 tail_size=TAIL)
-        self._image = photo(harden_edges(image, theme["border"]))
+        frame, title_h = theme["frame_px"], (28 if theme["titlebar"] else 0)
+        height = self._body_height + 2 * BUBBLE_PAD + title_h
+        titlebar = xp_titlebar(BUBBLE_W - 2 * frame, self.title, title_h, radius=theme["radius"] - frame) if title_h else None
+        image, top = panel_image(BUBBLE_W, height, theme["panel"], theme["frame"], theme["radius"], tail=self.tail, tail_x=self.tail_x,
+                                 tail_size=TAIL, frame=frame, square_bottom=bool(title_h), titlebar=titlebar)
+        self._image = photo(harden_edges(image, theme["frame"]))
         self.canvas.delete("all")
         self.canvas.configure(width=image.width, height=image.height)
         self.canvas.create_image(0, 0, anchor="nw", image=self._image)
-        self.canvas.create_window(BUBBLE_PAD, top + BUBBLE_PAD, window=self.body, anchor="nw", width=INNER_W)
+        self.canvas.create_window(BUBBLE_PAD, top + BUBBLE_PAD + title_h, window=self.body, anchor="nw", width=INNER_W)
         self.size = image.size
 
 
@@ -248,21 +307,60 @@ def card(parent, theme: dict, width: int, build, pad: int = 12, min_height: int 
     inner.update_idletasks()
     height = max(min_height, inner.winfo_reqheight() + 2 * pad)
     holder.configure(height=height)
-    holder._background = photo(rounded_box(width, height, theme["card"], theme["border"], 12, outer=outer))
+    holder._background = photo(rounded_box(width, height, theme["card"], theme["border"], theme["radius_card"], outer=outer))
     holder.create_image(0, 0, anchor="nw", image=holder._background)
     holder.create_window(pad, height // 2, window=inner, anchor="w", width=width - 2 * pad)
     return holder
 
 
+def xp_button(parent, theme: dict, text: str, command, primary: bool) -> tk.Button:
+    """Luna push button: a gradient picture with the label on top; orange border on hover, flat when pressed."""
+    from tkinter import font as tkfont
+    width = max(60, tkfont.Font(root=parent, font=rg(9)).measure(text) + 24)
+    base = "default" if primary else "normal"
+    images = {state: photo(xp_button_image(width, 25, state)) for state in ("normal", "default", "hover", "pressed")}
+    try:
+        background = parent.cget("bg")
+    except tk.TclError:
+        background = theme["desk"]
+    widget = tk.Button(parent, text=text, command=command, image=images[base], compound="center", font=rg(9), fg="#000000",
+                       disabledforeground="#7f7f7f", activeforeground="#000000", bg=background, activebackground=background,
+                       bd=0, relief="flat", highlightthickness=0, padx=0, pady=0, cursor="hand2")
+    widget._images = images
+    widget.bind("<Enter>", lambda e: widget.configure(image=images["hover"]))
+    widget.bind("<Leave>", lambda e: widget.configure(image=images[base]))
+    widget.bind("<ButtonPress-1>", lambda e: widget.configure(image=images["pressed"]))
+    widget.bind("<ButtonRelease-1>", lambda e: widget.configure(image=images["hover"]))
+    return widget
+
+
+def paint_bar(bar: tk.Canvas, width: int, percent: float, theme: dict, fill: str) -> None:
+    """A usage or download bar: rounded line, or the green blocks of the XP progress bar."""
+    bar.delete("all")
+    percent = max(0.0, min(100.0, percent))
+    if theme["blocks"]:
+        bar.create_rectangle(0, 0, width - 1, 15, outline="#686868", fill=theme["track"])
+        right, x = 2 + (width - 4) * percent / 100, 2
+        while x + 8 <= right + 0.5:
+            bar.create_rectangle(x, 3, x + 8, 13, fill=theme["bar"], outline="")
+            x += 10
+        return
+    bar.create_line(3, 3, width - 3, 3, width=6, capstyle="round", fill=theme["track"])
+    if percent > 0:
+        bar.create_line(3, 3, max(3 + (width - 6) * percent / 100, 3.5), 3, width=6, capstyle="round", fill=theme[fill])
+
+
 def button(parent, theme: dict, text: str, command, primary: bool = False) -> tk.Button:
+    if theme["titlebar"]:
+        return xp_button(parent, theme, text, command, primary)
     if primary:
         return tk.Button(parent, text=text, command=command, bg=theme["accent"], fg=theme["on_accent"],
                          activebackground=theme["accent"], activeforeground=theme["on_accent"], relief="flat", bd=0,
-                         padx=12, pady=6, font=(FONT_SEMIBOLD, 9), cursor="hand2")
+                         padx=12, pady=6, font=sb(9), cursor="hand2")
     return tk.Button(parent, text=text, command=command, bg=theme["card"], fg=theme["text"],
                      activebackground=theme["border"], activeforeground=theme["text"], relief="flat", bd=0,
                      highlightthickness=1, highlightbackground=theme["border"], padx=12, pady=5,
-                     font=(FONT_SEMIBOLD, 9), cursor="hand2")
+                     font=sb(9), cursor="hand2")
 
 
 def domain_name(url: str) -> str:
@@ -323,6 +421,16 @@ class RoverApp:
         self.conso_last_over = 0.0
         self.dict_last_over = 0.0
         self.settings_window: SettingsWindow | None = None
+        self.launch_options: dict[str, list[dict]] = {}
+        self.badge_icons: dict[str, Image.Image | None] = {}
+        self.flyout_ranges: list[tuple[int, int]] = []
+        self.flyout_right = True                      # which way the open row extends from the rail
+        self.rail_base: Image.Image | None = None
+        self.flyout_choices: list[dict] = []
+        self.flyout_index: int | None = None          # rail entry whose menu is open
+        self.flyout_hover: int | None = None
+        self.flyout_since = 0.0
+        self.flyout_last_over = 0.0
         self.rail_ranges: list[tuple[int, int]] = []
         self.live_widgets: dict = {}
 
@@ -351,8 +459,13 @@ class RoverApp:
         self.btn_bottom = ImageWindow(self.root, self.kick_animation, slide=(0, -10))
         self.conso = Bubble(self.root, "down", self.kick_animation, slide=(0, 14))
         self.dictation = Bubble(self.root, "up", self.kick_animation, slide=(0, -14))
+        self.conso.on_close = lambda: self.dismiss("conso")
+        self.dictation.on_close = lambda: self.dismiss("dictation")
+        self.dismissed = {"conso": False, "dictation": False}       # closed with its × until the pointer leaves
         self.rail = ImageWindow(self.root, self.kick_animation, cursor="hand2", slide=(-12, 0))
-        self.animated = (self.btn_top, self.btn_bottom, self.conso, self.dictation, self.rail)
+        self.flyout = Unroll(self.root, self.kick_animation)
+        self.flyout.label.bind("<Button-1>", self.flyout_click)
+        self.animated = (self.btn_top, self.btn_bottom, self.conso, self.dictation, self.rail, self.flyout)
         self.btn_top.label.bind("<Button-1>", lambda event: self.refresh_quotas_async(force=True))
         self.btn_bottom.label.bind("<Button-1>", lambda event: self.toggle_voice())
         self.rail.label.bind("<Button-1>", self.rail_click)
@@ -360,13 +473,18 @@ class RoverApp:
 
         self.build_menu()
 
+        self.recent = RecentDictations()
         self.recorder = Recorder(self.thread_status, self.transcription_ready, self.thread_error,
-                                 model_name=self.prefs["whisper_model"], get_config=lambda: self.prefs["transcription"])
+                                 model_name=self.prefs["whisper_model"], get_config=lambda: self.prefs["transcription"],
+                                 on_partial=self.thread_partial, get_live=lambda: self.prefs["live_transcript"])
+        self.partial = ""
         self.recorder.warm_up()
+        self.warm_rewriter()
         self.apply_look(initial=True)
-        self.hotkey_ok = register_hotkey()
+        self.registered_hotkey = self.prefs["hotkey"]
+        self.hotkey_ok = register_hotkey(self.registered_hotkey)
         if not self.hotkey_ok:
-            self.set_status(tr("Ctrl+Alt+R shortcut unavailable; click the mascot"))
+            self.set_status(tr("{shortcut} shortcut unavailable; click the mascot").format(shortcut=hotkeys.label(self.registered_hotkey)))
         self.loop(self.poll_hotkey, 50)
         self.loop(self.track_focus, 120)
         self.loop(self.animate, 30)
@@ -377,6 +495,7 @@ class RoverApp:
 
     @property
     def theme(self) -> dict:
+        set_active(self.prefs["theme"])            # the typeface (Tahoma in XP) follows the theme everywhere
         return THEMES[self.prefs["theme"]]
 
     def load_mascot(self) -> mascots.MascotSet:
@@ -400,6 +519,7 @@ class RoverApp:
         if mascot is None:
             mascot = mascots.rover_set(ROVER, size, box_h)
         mascot.crop_to_content()
+        mascot.overrides = mascot_setup.overrides(self.prefs, choice)
         return mascot
 
     def apply_look(self, initial: bool = False) -> None:
@@ -452,6 +572,11 @@ class RoverApp:
                     old.close()
                 self.mascot_bitmaps = {}
             image = Image.new("RGBA", (self.mascot_w, self.mascot_h), (0, 0, 0, 0))
+            # A fully transparent pixel lets clicks through to the window behind. One that is 1/255 opaque is invisible but
+            # still catches the mouse: this square around the mascot is what you grab to move it.
+            left, top, right, bottom = self.idle_box
+            ImageDraw.Draw(image).rectangle((max(0, left - 8), max(0, top - 8), min(self.mascot_w - 1, right + 8),
+                                             min(self.mascot_h - 1, bottom + 8)), fill=(0, 0, 0, 1))
             image.alpha_composite(self.mset.clips[clip_name].frames[index], (PAD, PAD))
             big = Image.new("RGBA", (16 * SS, 16 * SS), (0, 0, 0, 0))
             draw = ImageDraw.Draw(big)
@@ -520,7 +645,7 @@ class RoverApp:
 
     def build_menu(self) -> None:
         self.menu = tk.Menu(self.root, tearoff=0)
-        self.menu.add_command(label=tr("Dictate / stop · Ctrl+Alt+R"), command=self.toggle_voice)
+        self.menu.add_command(label=tr("Dictate / stop · {shortcut}").format(shortcut=hotkeys.label(self.prefs["hotkey"])), command=self.toggle_voice)
         self.menu.add_command(label=tr("Copy last text"), command=self.copy_text)
         self.menu.add_command(label=tr("Compare speech models…"), command=self.open_benchmark)
         self.menu.add_command(label=tr("Customize…"), command=self.open_settings)
@@ -549,7 +674,23 @@ class RoverApp:
         letters.append("s")
         glyphs.append(icon("plus", theme["sec"], 20))
         letters.append("+")
-        image, self.rail_ranges = rail_image(theme, glyphs, letters)
+        self.rail_base, self.rail_ranges = rail_image(theme, glyphs, letters)
+        self.notch_rail(self.flyout_index)
+
+    def notch_rail(self, index: int | None) -> None:
+        """While a row is unrolled behind the rail, the rail is see-through on that row's half: the two shapes flow into each other."""
+        image = self.rail_base
+        if index is not None and index < len(self.rail_ranges):
+            image = image.copy()
+            low, high = self.rail_ranges[index]
+            middle, centre = (low + high) // 2, image.width // 2
+            top, bottom = max(0, middle - 26), min(image.height, middle + 26)
+            pixels = np.array(image)
+            if self.flyout_right:
+                pixels[top:bottom, centre:, 3] = 0
+            else:
+                pixels[top:bottom, :centre, 3] = 0
+            image = Image.fromarray(pixels, "RGBA")
         self.rail.set_image(image)
 
     def custom_glyph(self, app: dict) -> Image.Image:
@@ -573,11 +714,17 @@ class RoverApp:
         def clamp(value, low, high):
             return max(low, min(high, value))
 
-        top_y = clamp(wy + self.idle_box[1] - GAP - BUTTON, top, bottom - BUTTON)
-        bottom_y = clamp(wy + self.idle_box[3] + GAP, top, bottom - BUTTON)
+        # default places, then the offsets chosen in the mascot editor
+        mascot = self.prefs["mascot"]
+        (top_dx, top_dy), (bottom_dx, bottom_dy), (rail_dx, rail_dy) = (mascot_setup.offset(self.prefs, mascot, key) for key in mascot_setup.ICON_IDS)
         button_x = clamp(cx - BUTTON // 2, left, right - BUTTON)
-        self.btn_top.place(button_x, top_y)
-        self.btn_bottom.place(button_x, bottom_y)
+        top_x = clamp(button_x + top_dx, left, right - BUTTON)
+        bottom_x = clamp(button_x + bottom_dx, left, right - BUTTON)
+        top_y = clamp(clamp(wy + self.idle_box[1] - GAP - BUTTON, top, bottom - BUTTON) + top_dy, top, bottom - BUTTON)
+        bottom_y = clamp(clamp(wy + self.idle_box[3] + GAP, top, bottom - BUTTON) + bottom_dy, top, bottom - BUTTON)
+        top_cx, bottom_cx = top_x + BUTTON // 2, bottom_x + BUTTON // 2          # the bubbles point at their buttons wherever they are
+        self.btn_top.place(top_x, top_y)
+        self.btn_bottom.place(bottom_x, bottom_y)
 
         rail_w, rail_h = self.rail.size
         prefer_right = self.prefs["side"] == "right"
@@ -603,8 +750,8 @@ class RoverApp:
             self.conso.set_mode(fits)
             width, height = self.conso.size
             if fits:
-                x = clamp(cx - width // 2, left, right - width)
-                self.conso.set_tail(cx - x)
+                x = clamp(top_cx - width // 2, left, right - width)
+                self.conso.set_tail(top_cx - x)
                 width, height = self.conso.size
                 y = clamp(top_y + BUTTON + TAIL - height, top, bottom - height)
             else:
@@ -617,8 +764,8 @@ class RoverApp:
             self.dictation.set_mode(fits)
             width, height = self.dictation.size
             if fits:
-                x = clamp(cx - width // 2, left, right - width)
-                self.dictation.set_tail(cx - x)
+                x = clamp(bottom_cx - width // 2, left, right - width)
+                self.dictation.set_tail(bottom_cx - x)
                 width, height = self.dictation.size
                 y = clamp(bottom_y - TAIL, top, bottom - height)
             else:
@@ -635,8 +782,8 @@ class RoverApp:
         x = right_x if prefer_right else left_x
         if x + rail_w > right or x < left:
             x = left_x if prefer_right else right_x
-        x = clamp(x, left, right - rail_w)
-        y = clamp(center_y - rail_h // 2, top, bottom - rail_h)
+        x = clamp(x + rail_dx, left, right - rail_w)
+        y = clamp(center_y - rail_h // 2 + rail_dy, top, bottom - rail_h)
         self.rail.slide = (-12 if x >= wx + self.mascot_w else 12, 0)
         self.rail.place(x, y)
 
@@ -688,6 +835,24 @@ class RoverApp:
         theme = self.theme
         return {"recording": theme["rec"], "processing": theme["accent"], "error": theme["err"]}.get(state or self.dict_state(), theme["ok"])
 
+    def button_images(self, state: str) -> tuple[Image.Image, Image.Image]:
+        """The pictures of the usage gauge button and of the microphone button for a dictation state."""
+        theme = self.theme
+        color = self.state_color(state)
+        if theme["tools"]:         # Paint-toolbox buttons: raised, and sunken on the checkered fill while recording
+            glyph = icon("stop", theme["rec"], 22) if state == "recording" else icon("mic", color, 22)
+            return tool_button(BUTTON, icon("gauge", theme["accent"], 22)), tool_button(BUTTON, glyph, pressed=state == "recording")
+        glyph = icon("stop", "#ffffff", 22) if state == "recording" else icon("mic", color, 22)
+        fill = color if state == "recording" else theme["panel"]
+        return (circle_button(BUTTON, theme["panel"], theme["accent"], icon("gauge", theme["accent"], 22), border_width=1.5),
+                circle_button(BUTTON, fill, color, glyph, border_width=1.5))
+
+    def open_mascot_editor(self) -> None:
+        if getattr(self, "mascot_editor", None) is not None and self.mascot_editor.alive():
+            self.mascot_editor.top.lift()
+            return
+        self.mascot_editor = MascotEditor(self)
+
     def update_status_visuals(self, rebuild_bubbles: bool = False) -> None:
         theme = self.theme
         state = self.dict_state()
@@ -697,10 +862,9 @@ class RoverApp:
             self.paint_mascot()
         if self.mset is not None and self.base_event() != self.base_ev and not (self.drag_origin and self.dragged):
             self.play_base()
-        glyph = icon("stop", "#ffffff", 22) if state == "recording" else icon("mic", color, 22)
-        fill = color if state == "recording" else theme["panel"]
-        self.btn_bottom.set_image(circle_button(BUTTON, fill, color, glyph, border_width=1.5))
-        self.btn_top.set_image(circle_button(BUTTON, theme["panel"], theme["accent"], icon("gauge", theme["accent"], 22), border_width=1.5))
+        top_image, bottom_image = self.button_images(state)
+        self.btn_top.set_image(top_image)
+        self.btn_bottom.set_image(bottom_image)
         if rebuild_bubbles or self.conso.visible():
             self.render_conso()
         if rebuild_bubbles or self.dictation.visible():
@@ -718,6 +882,24 @@ class RoverApp:
                 self.step = "whisper"
             self.update_status_visuals()
         self.root.after(0, apply)
+
+    def thread_partial(self, text: str):
+        self.root.after(0, lambda: self.show_partial(text))
+
+    def live_enabled(self) -> bool:
+        return bool(self.prefs["live_transcript"] and transcribe.is_gpu(self.prefs["transcription"]))
+
+    def show_partial(self, text: str) -> None:
+        """The words recognised so far, in the microphone bubble, while the recording goes on."""
+        if self.dict_state() != "recording":
+            return
+        self.partial = text
+        label = self.live_widgets.get("live")
+        if label is not None:
+            try:
+                label.configure(text=("…" + text[-210:]) if len(text) > 210 else text)
+            except tk.TclError:
+                pass
 
     def thread_error(self, message: str):
         self.root.after(0, lambda: self.finish_error(message))
@@ -740,13 +922,16 @@ class RoverApp:
 
     def rewrite_worker(self, transcript: str, language: str):
         try:
-            revised = rewrite_text(transcript, language, self.prefs)
+            context = self.recent.recent() if self.prefs["keep_context"] else None
+            revised = rewrite_text(transcript, language, self.prefs, context)
             self.root.after(0, lambda: self.complete_rewrite(revised))
         except Exception as exc:
             self.thread_error(str(exc))
 
     def complete_rewrite(self, revised: str):
         self.busy = False
+        if self.prefs["keep_context"]:
+            self.recent.add(revised)
         self.last_output = revised
         self.pending_text = revised
         if self.prefs["insert"] == "copy":
@@ -893,9 +1078,19 @@ class RoverApp:
             self.spin = (self.spin + 1) % 12
             self.draw_spinner()
 
+    def dismiss(self, name: str) -> None:
+        if name == "conso":
+            self.close_conso()
+        elif self.dict_state() == "ready" and time.monotonic() >= self.notice_until:
+            self.close_dictation()
+        else:
+            return
+        self.dismissed[name] = True
+
     def handle_hover(self, now: float) -> None:
         """Round buttons and the rail appear while the pointer is on Rover; a button opens its bubble."""
-        cluster = (self.btn_top.win, self.btn_bottom.win, self.conso.win, self.dictation.win, self.rail.win)
+        cluster = (self.btn_top.win, self.btn_bottom.win, self.conso.win, self.dictation.win, self.rail.win,
+                   self.flyout.win)
         over_any = self.pointer_on_mascot() or any(pointer_inside(window) for window in cluster)
         if over_any:
             self.hover_last = now
@@ -904,6 +1099,11 @@ class RoverApp:
             self.set_revealed(revealed)
 
         over_conso = pointer_inside(self.btn_top.win) or pointer_inside(self.conso.win)
+        if self.dismissed["conso"]:
+            if over_conso:
+                over_conso = False
+            else:
+                self.dismissed["conso"] = False
         if over_conso:
             self.conso_last_over = now
         if self.revealed and over_conso and not self.conso.visible():
@@ -913,12 +1113,105 @@ class RoverApp:
 
         forced = self.dict_state() != "ready" or now < self.notice_until
         over_dict = pointer_inside(self.btn_bottom.win) or pointer_inside(self.dictation.win)
+        if self.dismissed["dictation"]:
+            if over_dict:
+                over_dict = False
+            else:
+                self.dismissed["dictation"] = False
         if over_dict:
             self.dict_last_over = now
         if (forced or (self.revealed and over_dict)) and not self.dictation.visible():
             self.open_dictation()
         elif self.dictation.visible() and not forced and (not self.revealed or now - self.dict_last_over > CLOSE_DELAY):
             self.close_dictation()
+        self.handle_flyout(now)
+
+    def handle_flyout(self, now: float) -> None:
+        """Resting on the Claude or ChatGPT logo for a moment opens a row of round buttons, one per installed way to start a chat."""
+        apps = self.prefs["apps"]
+        target = None
+        if self.revealed and pointer_inside(self.rail.win):
+            index = self.rail_index(self.root.winfo_pointery() - self.rail.win.winfo_rooty())
+            if index is not None and index < len(apps) and len(self.flyout_options(apps[index])) > 1:
+                target = index
+        if target != self.flyout_hover:
+            self.flyout_hover, self.flyout_since = target, now
+        if target is not None:
+            self.flyout_last_over = now
+            if self.flyout_index != target and now - self.flyout_since > 0.12:
+                self.show_flyout(target)
+        if self.flyout_index is not None:
+            if self.flyout_index == target or pointer_inside(self.flyout.win):
+                self.flyout_last_over = now
+            elif not self.revealed or now - self.flyout_last_over > 0.25:
+                self.close_flyout()
+
+    def flyout_options(self, entry: dict) -> list[dict]:
+        """The desktop app is what the logo itself opens, so the row lists the other ways."""
+        return [c for c in self.launch_options.get(entry.get("kind"), []) if c["type"] != "shell"]
+
+    def show_flyout(self, index: int) -> None:
+        entry = self.prefs["apps"][index]
+        choices = self.flyout_options(entry)
+        glyph = icon("claude", CLAUDE_COLOR, 24) if entry.get("kind") == "claude" else icon("openai", self.theme["text"], 24)
+        badges = [self.badge_icons.get(c["badge"]) for c in choices]
+        rail = self.rail.win
+        low, high = self.rail_ranges[index]
+        left, top, right, bottom = monitor_work_area(rail.winfo_rootx(), rail.winfo_rooty())
+        centre = rail.winfo_rootx() + rail.winfo_width() // 2         # the band's first disc sits exactly on the rail button
+        # away from the mascot: the rail may be on either side of it (the preferred side has no room near a screen edge)
+        toward_right = centre > self.root.winfo_rootx() + self.anchor_x
+        image, self.flyout_ranges = flyout_image(self.theme, glyph, badges, toward_right)
+        fits = {True: centre - FLYOUT_DISC // 2 + image.width <= right, False: centre + FLYOUT_DISC // 2 - image.width >= left}
+        if not fits[toward_right] and fits[not toward_right]:
+            toward_right = not toward_right
+            image, self.flyout_ranges = flyout_image(self.theme, glyph, badges, toward_right)
+        self.flyout_right = toward_right
+        self.flyout_choices = choices
+        self.flyout.set_band(image, toward_right)
+        width, height = self.flyout.size
+        x = centre - FLYOUT_DISC // 2 if toward_right else centre + FLYOUT_DISC // 2 - width
+        y = rail.winfo_rooty() + (low + high) // 2 - height // 2
+        self.flyout.place(max(left, min(right - width, x)), max(top, min(bottom - height, y)))
+        self.flyout_index = index
+        self.notch_rail(index)
+        self.flyout.appear()
+        rail.lift()                          # the band comes out from behind the rail
+
+    def close_flyout(self) -> None:
+        self.flyout.vanish()
+        self.flyout_index = None
+        self.notch_rail(None)
+
+    def flyout_click(self, event) -> None:
+        width = self.flyout.size[0]
+        if (event.x < FLYOUT_DISC) if self.flyout_right else (event.x >= width - FLYOUT_DISC):
+            index = self.flyout_index
+            self.close_flyout()
+            if index is not None:
+                self.activate_app(index)                     # that disc is the rail button itself
+            return
+        for (low, high), choice in zip(self.flyout_ranges, self.flyout_choices):
+            if low <= event.x < high:
+                self.close_flyout()
+                try:
+                    launchers.launch(choice)
+                except OSError:
+                    self.set_status(tr("Could not open {name}").format(name=choice["label"]))
+                return
+
+    def detect_launchers(self) -> None:
+        try:
+            apps = launchers.start_menu_apps()
+            found = {kind: launchers.options(kind, apps) for kind in launchers.PRODUCTS}
+            for choices in found.values():
+                for choice in choices:
+                    path = choice.get("badge")
+                    if path and path not in self.badge_icons:
+                        self.badge_icons[path] = appicons.shell_icon(path)
+            self.launch_options = found
+        except Exception as exc:
+            self.log_exception(type(exc), exc, exc.__traceback__)
 
     def pointer_on_mascot(self) -> bool:
         """True over the resting mascot (a few pixels of margin), not over the empty corners of its window."""
@@ -987,6 +1280,7 @@ class RoverApp:
             self.position_all()
 
     def render_conso(self) -> None:
+        self.conso.title = tr("Usage")
         self.conso.rebuild(self.theme, self.fill_conso)
 
     def fill_conso(self, body: tk.Frame) -> None:
@@ -994,7 +1288,7 @@ class RoverApp:
         panel = theme["panel"]
         head = tk.Frame(body, bg=panel)
         head.pack(fill="x")
-        tk.Label(head, text=tr("USAGE"), bg=panel, fg=theme["sec"], font=(FONT_SEMIBOLD, 8)).pack(side="left")
+        tk.Label(head, text=tr("USAGE"), bg=panel, fg=theme["sec"], font=sb(8)).pack(side="left")
         cards = self.cards
         if cards is None:
             status, color = tr("Reading…"), theme["sec"]
@@ -1002,8 +1296,8 @@ class RoverApp:
             status, color = tr("Data up to date · {time}").format(time=f"{self.quota_time:%H:%M}"), theme["ok"]
         else:
             status, color = tr("Incomplete data"), theme["err"]
-        tk.Label(head, text=status, bg=panel, fg=theme["sec"], font=(FONT_REGULAR, 8)).pack(side="right")
-        tk.Label(head, text="●", bg=panel, fg=color, font=(FONT_REGULAR, 7)).pack(side="right", padx=(0, 4))
+        tk.Label(head, text=status, bg=panel, fg=theme["sec"], font=rg(8)).pack(side="right")
+        tk.Label(head, text="●", bg=panel, fg=color, font=rg(7)).pack(side="right", padx=(0, 4))
 
         for entry in cards or []:
             tk.Frame(body, bg=panel, height=10).pack()
@@ -1020,30 +1314,30 @@ class RoverApp:
         logo = photo(icon_pil("openai", theme["text"], 18))
         header._logo = logo
         tk.Label(header, image=logo, bg=bg).pack(side="left")
-        tk.Label(header, text="Codex", bg=bg, fg=theme["text"], font=(FONT_SEMIBOLD, 10)).pack(side="left", padx=(6, 0))
+        tk.Label(header, text="Codex", bg=bg, fg=theme["text"], font=sb(10)).pack(side="left", padx=(6, 0))
         plan = entry.get("plan") or entry["name"]
-        tk.Label(header, text=tr("{plan} account").format(plan=plan), bg=bg, fg=theme["sec"], font=(FONT_SEMIBOLD, 8), highlightthickness=1,
+        tk.Label(header, text=tr("{plan} account").format(plan=plan), bg=bg, fg=theme["sec"], font=sb(8), highlightthickness=1,
                  highlightbackground=theme["border"], padx=6).pack(side="right")
         windows = entry.get("windows") or []
         if not windows:
-            tk.Label(inner, text=entry.get("status", tr("Unknown")), bg=bg, fg=theme["err"], font=(FONT_REGULAR, 9),
+            tk.Label(inner, text=entry.get("status", tr("Unknown")), bg=bg, fg=theme["err"], font=rg(9),
                      wraplength=INNER_W - 30, justify="left").pack(anchor="w", pady=(8, 0))
             return
         for window in windows:
             row = tk.Frame(inner, bg=bg)
             row.pack(fill="x", pady=(10, 0))
-            tk.Label(row, text=tr("{label} · used").format(label=window['label']), bg=bg, fg=theme["text"], font=(FONT_REGULAR, 9)).pack(side="left")
+            tk.Label(row, text=tr("{label} · used").format(label=window['label']), bg=bg, fg=theme["text"], font=rg(9)).pack(side="left")
             tk.Label(row, text=f"{window['used']} %", bg=bg, fg=theme["text"], font=(FONT_MONO, 9, "bold")).pack(side="right")
             self.meter(inner, window["used"], bg).pack(pady=(5, 0))
             if window.get("reset"):
                 tk.Label(inner, text=tr("Resets {date}").format(date=format_reset(window['reset'])), bg=bg, fg=theme["sec"],
-                         font=(FONT_REGULAR, 8)).pack(anchor="w", pady=(4, 0))
+                         font=rg(8)).pack(anchor="w", pady=(4, 0))
         if entry.get("extra_credits"):
             tk.Label(inner, text=tr("Additional credits: {amount}").format(amount=format_credits(entry['extra_credits'])), bg=bg, fg=theme["sec"],
-                     font=(FONT_REGULAR, 8)).pack(anchor="w", pady=(8, 0))
+                     font=rg(8)).pack(anchor="w", pady=(8, 0))
         if entry.get("status") != "ok":
             tk.Label(inner, text=tr("Data may be out of date"), bg=bg, fg=theme["err"],
-                     font=(FONT_REGULAR, 8)).pack(anchor="w", pady=(6, 0))
+                     font=rg(8)).pack(anchor="w", pady=(6, 0))
 
     def claude_card(self, inner: tk.Frame, entry: dict) -> None:
         theme = self.theme
@@ -1053,28 +1347,26 @@ class RoverApp:
         logo = photo(icon_pil("claude", CLAUDE_COLOR, 18))
         header._logo = logo
         tk.Label(header, image=logo, bg=bg).pack(side="left")
-        tk.Label(header, text="Claude", bg=bg, fg=theme["text"], font=(FONT_SEMIBOLD, 10)).pack(side="left", padx=(6, 0))
+        tk.Label(header, text="Claude", bg=bg, fg=theme["text"], font=sb(10)).pack(side="left", padx=(6, 0))
         tk.Label(inner, text=tr("Local account detected · quota unavailable"), bg=bg, fg=theme["sec"],
-                 font=(FONT_REGULAR, 8)).pack(anchor="w", pady=(4, 0))
+                 font=rg(8)).pack(anchor="w", pady=(4, 0))
         link = tk.Label(inner, text=tr("View usage ↗"), bg=bg, fg=theme["link"], cursor="hand2",
-                        font=(FONT_SEMIBOLD, 9, "underline"))
+                        font=sb(9, "underline"))
         link.pack(anchor="w", pady=(6, 0))
         link.bind("<Button-1>", lambda event: webbrowser.open(entry.get("url") or CLAUDE_USAGE_URL))
 
     def meter(self, parent, percent: int, bg: str) -> tk.Canvas:
         theme = self.theme
         width = INNER_W - 24
-        bar = tk.Canvas(parent, width=width, height=6, bg=bg, bd=0, highlightthickness=0)
-        bar.create_line(3, 3, width - 3, 3, width=6, capstyle="round", fill=theme["track"])
-        if percent > 0:
-            end = 3 + (width - 6) * min(percent, 100) / 100
-            bar.create_line(3, 3, max(end, 3.5), 3, width=6, capstyle="round", fill=theme["bar"])
+        bar = tk.Canvas(parent, width=width, height=16 if theme["blocks"] else 6, bg=bg, bd=0, highlightthickness=0)
+        paint_bar(bar, width, percent, theme, "bar")
         return bar
 
     # ------------------------------------------------------------------ dictation bubble
 
     def render_dictation(self) -> None:
         self.live_widgets = {}
+        self.dictation.title = tr("Dictation")
         self.dictation.rebuild(self.theme, self.fill_dictation)
 
     def fill_dictation(self, body: tk.Frame) -> None:
@@ -1083,13 +1375,19 @@ class RoverApp:
         state = self.dict_state()
         head = tk.Frame(body, bg=panel)
         head.pack(fill="x")
-        tk.Label(head, text=tr("DICTATION"), bg=panel, fg=theme["sec"], font=(FONT_SEMIBOLD, 8)).pack(side="left")
-        seg = tk.Frame(head, bg=theme["card"], highlightthickness=1, highlightbackground=theme["border"])
+        tk.Label(head, text=tr("DICTATION"), bg=panel, fg=theme["sec"], font=sb(8)).pack(side="left")
+        seg = tk.Frame(head, bg=panel if theme["titlebar"] else theme["card"], highlightthickness=0 if theme["titlebar"] else 1,
+                       highlightbackground=theme["border"])
         seg.pack(side="right")
         for key, caption in (("fr", "FR"), ("en", "EN")):
             active = self.language == key
+            if theme["titlebar"]:                       # Windows XP: two radio buttons
+                radio = XpRadio(seg, theme, caption, lambda k=key: self.set_language(k), panel, sb(9))
+                radio.set_selected(active)
+                radio.pack(side="left", padx=(0, 8))
+                continue
             label = tk.Label(seg, text=caption, bg=theme["accent"] if active else theme["card"],
-                             fg=theme["on_accent"] if active else theme["sec"], font=(FONT_SEMIBOLD, 9), padx=10, pady=2,
+                             fg=theme["on_accent"] if active else theme["sec"], font=sb(9), padx=10, pady=2,
                              cursor="hand2")
             label.pack(side="left", padx=2, pady=2)
             label.bind("<Button-1>", lambda event, k=key: self.set_language(k))
@@ -1101,7 +1399,11 @@ class RoverApp:
         mic_fg = "#ffffff" if state == "recording" else theme["on_accent"] if state == "ready" else theme["sec"]
         mic_border = color if state == "recording" else theme["accent"] if state == "ready" else theme["border"]
         glyph = icon("stop", mic_fg, 22) if state == "recording" else icon("mic", mic_fg, 24)
-        mic_image = photo(circle_button(48, mic_fill, mic_border, glyph, border_width=1.5))
+        if theme["blocks"] and state in ("ready", "recording"):         # the big glossy XP orb, blue to listen, red while recording
+            light, dark = ("#ff9a8c", "#c0190b") if state == "recording" else ("#8fbcff", "#245edb")
+            mic_image = photo(orb_image(48, light, dark, glyph))
+        else:
+            mic_image = photo(circle_button(48, mic_fill, mic_border, glyph, border_width=1.5))
         mic = tk.Label(row, image=mic_image, bg=panel, cursor="hand2")
         mic._image = mic_image
         mic.pack(side="left")
@@ -1111,11 +1413,11 @@ class RoverApp:
         text_col = tk.Frame(row, bg=panel)
         text_col.pack(side="left", padx=12)
         tk.Label(text_col, text=title, bg=panel, fg=color if state in ("recording", "error") else theme["text"],
-                 font=(FONT_SEMIBOLD, 10), anchor="w").pack(anchor="w")
-        tk.Label(text_col, text=sub, bg=panel, fg=theme["sec"], font=(FONT_REGULAR, 8), anchor="w").pack(anchor="w")
+                 font=sb(10), anchor="w").pack(anchor="w")
+        tk.Label(text_col, text=sub, bg=panel, fg=theme["sec"], font=rg(8), anchor="w").pack(anchor="w")
         keys = tk.Frame(row, bg=panel)
         keys.pack(side="right")
-        for key_name in ("Ctrl", "Alt", "R"):
+        for key_name in hotkeys.parts(self.prefs["hotkey"]):
             tk.Label(keys, text=key_name, bg=theme["kbd"], fg=theme["sec"], font=(FONT_MONO, 8), padx=4,
                      highlightthickness=1, highlightbackground=theme["border"]).pack(side="left", padx=(0, 3))
 
@@ -1153,29 +1455,34 @@ class RoverApp:
         width = INNER_W - 24 - 4
         if state == "ready":
             message = self.notice or tr("Click the mascot or use the shortcut, then speak. The text is inserted into the active field and never sent.")
-            tk.Label(inner, text=message, bg=bg, fg=theme["sec"], font=(FONT_REGULAR, 9), wraplength=width,
+            tk.Label(inner, text=message, bg=bg, fg=theme["sec"], font=rg(9), wraplength=width,
                      justify="left").pack(anchor="w")
             tk.Label(inner, text=self.pipeline_line(), bg=bg, fg=theme["sec"],
-                     font=(FONT_REGULAR, 8)).pack(anchor="w", pady=(8, 0))
+                     font=rg(8)).pack(anchor="w", pady=(8, 0))
         elif state == "recording":
             top = tk.Frame(inner, bg=bg)
             top.pack(fill="x")
-            tk.Label(top, text=tr("● Recording"), bg=bg, fg=theme["rec"], font=(FONT_SEMIBOLD, 9)).pack(side="left")
+            tk.Label(top, text=tr("● Recording"), bg=bg, fg=theme["rec"], font=sb(9)).pack(side="left")
             timer = tk.Label(top, text="00:00", bg=bg, fg=theme["text"], font=(FONT_MONO, 9))
             timer.pack(side="right")
             wave = tk.Canvas(inner, width=width, height=44, bg=bg, bd=0, highlightthickness=0)
             wave.pack(pady=(6, 4))
-            tk.Label(inner, text=tr("Click again to finish."), bg=bg, fg=theme["sec"], font=(FONT_REGULAR, 8)).pack(anchor="w")
-            self.live_widgets = {"wave": wave, "timer": timer, "wave_width": width}
+            live = None
+            if self.live_enabled():       # the words appear here as you speak (a few lines are reserved so the bubble does not jump)
+                shown = ("…" + self.partial[-210:]) if len(self.partial) > 210 else self.partial
+                live = tk.Label(inner, text=shown, bg=bg, fg=theme["text"], font=rg(9), wraplength=width, justify="left", anchor="nw", height=4)
+                live.pack(fill="x", pady=(0, 4))
+            tk.Label(inner, text=tr("Click again to finish."), bg=bg, fg=theme["sec"], font=rg(8)).pack(anchor="w")
+            self.live_widgets = {"wave": wave, "timer": timer, "wave_width": width, "live": live}
             self.draw_wave()
         elif state == "processing":
             done = self.step == "codex"
             self.step_row(inner, self.transcription_step(), done=done, spinner=not done)
             self.step_row(inner, tr("Rewriting ({tool})…").format(tool=provider_label(self.prefs) or "…"), done=False, spinner=done, dim=not done)
         elif state == "text":
-            tk.Label(inner, text=tr("Text ready to insert"), bg=bg, fg=theme["ok"], font=(FONT_SEMIBOLD, 9)).pack(anchor="w")
+            tk.Label(inner, text=tr("Text ready to insert"), bg=bg, fg=theme["ok"], font=sb(9)).pack(anchor="w")
             preview = self.pending_text if len(self.pending_text) <= 200 else self.pending_text[:197] + "…"
-            tk.Label(inner, text=preview, bg=bg, fg=theme["text"], font=(FONT_REGULAR, 9), wraplength=width,
+            tk.Label(inner, text=preview, bg=bg, fg=theme["text"], font=rg(9), wraplength=width,
                      justify="left").pack(anchor="w", pady=(4, 8))
             actions = tk.Frame(inner, bg=bg)
             actions.pack(fill="x")
@@ -1184,8 +1491,8 @@ class RoverApp:
             button(actions, theme, tr("Cancel"), self.cancel_pending).pack(side="left", padx=(8, 0))
         else:
             tk.Label(inner, text=tr("Rewrite failed") if self.last_transcript else tr("Dictation failed"), bg=bg,
-                     fg=theme["err"], font=(FONT_SEMIBOLD, 9)).pack(anchor="w")
-            tk.Label(inner, text=self.error_msg, bg=bg, fg=theme["sec"], font=(FONT_REGULAR, 9), wraplength=width,
+                     fg=theme["err"], font=sb(9)).pack(anchor="w")
+            tk.Label(inner, text=self.error_msg, bg=bg, fg=theme["sec"], font=rg(9), wraplength=width,
                      justify="left").pack(anchor="w", pady=(4, 8))
             actions = tk.Frame(inner, bg=bg)
             actions.pack(fill="x")
@@ -1212,7 +1519,7 @@ class RoverApp:
             marker = tk.Label(row, image=image, bg=bg)
             marker._image = image
         marker.pack(side="left")
-        tk.Label(row, text=text, bg=bg, fg=theme["sec"] if dim else theme["text"], font=(FONT_REGULAR, 10)).pack(side="left", padx=8)
+        tk.Label(row, text=text, bg=bg, fg=theme["sec"] if dim else theme["text"], font=rg(10)).pack(side="left", padx=8)
 
     def draw_spinner(self) -> None:
         marker = self.live_widgets.get("spinner")
@@ -1296,7 +1603,16 @@ class RoverApp:
         elif index > len(apps):
             self.add_app_dialog()
         else:
-            self.open_app(apps[index])
+            self.activate_app(index)
+
+    def activate_app(self, index: int) -> None:
+        """The logo opens the desktop app when there is one, else the web page."""
+        entry = self.prefs["apps"][index]
+        desktop = next((c for c in self.launch_options.get(entry.get("kind"), []) if c["type"] == "shell"), None)
+        if desktop is not None:
+            launchers.launch(desktop)
+        else:
+            self.open_app(entry)
 
     def rail_menu(self, event):
         index = self.rail_index(event.y)
@@ -1324,8 +1640,8 @@ class RoverApp:
     def apps_changed(self) -> None:
         self.build_rail()
         self.position_all()
-        if self.settings_window is not None and self.settings_window.alive():
-            self.settings_window.build()
+        if self.settings_window is not None:
+            self.settings_window.invalidate()
 
     def remove_app(self, index: int):
         del self.prefs["apps"][index]
@@ -1368,11 +1684,38 @@ class RoverApp:
     def add_app_dialog(self):
         add_app_dialog_window(self)
 
+    def ensure_settings(self) -> "SettingsWindow":
+        """Both settings pages are built once, hidden, so opening them is instant."""
+        if self.settings_window is None:
+            self.settings_window = SettingsWindow(self, "main")
+        return self.settings_window
+
+    def ensure_advanced(self) -> "SettingsWindow":
+        main = self.ensure_settings()
+        if main.peer is None:
+            main.peer = SettingsWindow(self, "advanced", peer=main)
+        return main.peer
+
+    def preload_settings(self) -> None:
+        """Right after start-up, while you are not looking: detect the graphics card, then build both pages one after the other."""
+        threading.Thread(target=self.detect_gpu, daemon=True).start()
+        threading.Thread(target=self.detect_launchers, daemon=True).start()
+        self.root.after(1500, lambda: (self.ensure_settings(), self.root.after(400, self.ensure_advanced)))
+
+    def detect_gpu(self) -> None:
+        try:
+            self.gpu_info = gpu.detect()
+        except Exception as exc:
+            self.log_exception(type(exc), exc, exc.__traceback__)
+
     def open_settings(self):
-        if self.settings_window is not None and self.settings_window.alive():
-            self.settings_window.top.lift()
-            return
-        self.settings_window = SettingsWindow(self)
+        main = self.ensure_settings()
+        for window in (main, main.peer):
+            if window is not None and window.visible:
+                window.top.lift()
+                window.top.focus_force()
+                return
+        main.show()
 
     def open_benchmark(self) -> None:
         """The benchmark is its own small program, so a slow model never freezes the mascot."""
@@ -1382,10 +1725,35 @@ class RoverApp:
         subprocess.Popen([str(pythonw if pythonw.exists() else python), str(HERE / "benchmark.py")], cwd=str(HERE),
                          creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
 
+    def warm_rewriter(self) -> None:
+        """Start Codex in the background so the first rewrite does not wait about 4 s for it."""
+        if resolve_provider(self.prefs) == "codex":
+            threading.Thread(target=start_codex_server, args=(self.prefs["codex"],), daemon=True).start()
+
+    def apply_hotkey(self) -> bool:
+        """Move the system-wide shortcut to the one in the preferences; if it is taken, keep the old one and say so."""
+        wanted = self.prefs["hotkey"]
+        if wanted == self.registered_hotkey and self.hotkey_ok:
+            return True
+        unregister_hotkey()
+        if register_hotkey(wanted):
+            self.registered_hotkey, self.hotkey_ok = wanted, True
+            ok = True
+        else:
+            self.hotkey_ok = register_hotkey(self.registered_hotkey)         # put the previous one back
+            self.prefs["hotkey"] = self.registered_hotkey
+            ok = False
+        self.build_menu()
+        if self.dictation.visible():
+            self.render_dictation()
+        return ok
+
     def apply_advanced(self) -> None:
         """Settings that need no redraw: the speech model takes effect at the next dictation."""
+        self.apply_hotkey()
         self.recorder.set_model(self.prefs["whisper_model"])
         self.language = self.prefs["language"]
+        self.warm_rewriter()
 
     def update_pref(self, **changes) -> None:
         self.prefs.update(changes)
@@ -1401,12 +1769,65 @@ class RoverApp:
     def quit(self):
         self.recorder.stop()
         accel.stop()
+        codex_server.server.stop()
         if self.hotkey_ok:
             unregister_hotkey()
         self.root.destroy()
 
     def run(self):
+        self.preload_settings()
         self.root.mainloop()
+
+
+def make_xp_chrome(top, app, title: str, on_close):
+    """The Luna window frame: blue title bar drawn as a picture (re-rendered to the window width), 3 px blue frame."""
+    theme = app.theme
+    top.configure(bg=theme["frame"])
+    bar = tk.Canvas(top, height=30, bg=theme["frame"], bd=0, highlightthickness=0)
+    bar.pack(fill="x")
+    shown = {"width": 0, "image": None}
+
+    def render(width):
+        if width < 80 or width == shown["width"]:
+            return
+        shown["width"] = width
+        shown["image"] = photo(xp_titlebar(width, title, 30).resize((width, 30), Image.Resampling.LANCZOS))
+        bar.delete("all")
+        bar.create_image(0, 0, anchor="nw", image=shown["image"])
+
+    grab = {}
+
+    def press(event):
+        if shown["width"] and event.x >= shown["width"] - 32:
+            on_close()
+        else:
+            grab["offset"] = (event.x_root - top.winfo_x(), event.y_root - top.winfo_y())
+
+    def move(event):
+        if "offset" in grab:
+            place_window(top, event.x_root - grab["offset"][0], event.y_root - grab["offset"][1])
+
+    def hover(event):
+        bar.configure(cursor="hand2" if shown["width"] and event.x >= shown["width"] - 32 else "arrow")
+
+    clipped = {"size": None}
+
+    def clip(event):
+        if event.widget is top and (event.width, event.height) != clipped["size"]:
+            clipped["size"] = (event.width, event.height)
+            top.after_idle(lambda: round_top_corners(top))
+
+    top.bind("<Configure>", clip, add="+")
+    bar.bind("<Motion>", hover)
+    bar.bind("<Configure>", lambda event: render(event.width))
+    bar.bind("<ButtonPress-1>", press)
+    bar.bind("<B1-Motion>", move)
+    inner = tk.Frame(top, bg=theme["desk"])
+    inner.pack(padx=3, pady=(0, 3), fill="both", expand=True)
+    body = tk.Frame(inner, bg=theme["desk"])
+    body.pack(fill="both", expand=True)
+    top.bind("<Escape>", lambda event: on_close())
+    return body, tk.Frame(body, bg=theme["desk"])
 
 
 def make_chrome(top, app, title: str, on_close):
@@ -1414,14 +1835,16 @@ def make_chrome(top, app, title: str, on_close):
     theme = app.theme
     for child in top.winfo_children():
         child.destroy()
+    if theme["titlebar"]:
+        return make_xp_chrome(top, app, title, on_close)
     top.configure(bg=theme["border"])
     inner = tk.Frame(top, bg=theme["desk"])
     inner.pack(padx=1, pady=1, fill="both", expand=True)
     bar = tk.Frame(inner, bg=theme["desk"])
     bar.pack(fill="x", padx=14, pady=(9, 0))
-    label = tk.Label(bar, text=title, bg=theme["desk"], fg=theme["sec"], font=(FONT_SEMIBOLD, 9))
+    label = tk.Label(bar, text=title, bg=theme["desk"], fg=theme["sec"], font=sb(9))
     label.pack(side="left")
-    close = tk.Label(bar, text="✕", bg=theme["desk"], fg=theme["sec"], font=(FONT_REGULAR, 11), padx=9, pady=1, cursor="hand2")
+    close = tk.Label(bar, text="✕", bg=theme["desk"], fg=theme["sec"], font=rg(11), padx=9, pady=1, cursor="hand2")
     close.pack(side="right")
     close.bind("<Enter>", lambda event: close.configure(bg=theme["err"], fg="#ffffff"))
     close.bind("<Leave>", lambda event: close.configure(bg=theme["desk"], fg=theme["sec"]))
@@ -1447,33 +1870,390 @@ def make_chrome(top, app, title: str, on_close):
 
 
 def restyle_toggle(widget: tk.Button, theme: dict, active: bool, base: str) -> None:
+    if isinstance(widget, XpRadio):
+        widget.set_selected(active)
+        return
     widget.configure(bg=theme["accent"] if active else base, fg=theme["on_accent"] if active else theme["text"],
                      activebackground=theme["accent"], activeforeground=theme["on_accent"],
                      highlightbackground=theme["accent"] if active else theme["border"])
 
 
-class SettingsWindow:
-    """Personnalisation: mascot, size, side of the shortcut rail and theme (applied live, edited in place)."""
+class MascotEditor:
+    """Choose the animation played for each event, and drag the gauge, the microphone and the shortcut rail where you want them."""
 
-    def __init__(self, app: RoverApp):
+    W, H = 430, 450
+
+    def __init__(self, app: "RoverApp"):
         self.app = app
+        self.mascot = app.prefs["mascot"]
+        self.mset = app.mset
+        self.animations = mascot_setup.overrides(app.prefs, self.mascot)
+        self.layout = {key: list(mascot_setup.offset(app.prefs, self.mascot, key)) for key in mascot_setup.ICON_IDS}
+        self.event = "idle"
+        self.clip_name = self.mset.find("idle") or "idle"
+        self.frame_index = 0
+        self.timer = None
+        self.images: list = []
+        self.sprite_images: dict = {}
+        self.grab = None
         self.top = tk.Toplevel(app.root)
+        self.top.withdraw()
         self.top.overrideredirect(True)
         self.top.attributes("-topmost", True)
-        self.images: list = []
-        self.preview_images: list = []
-        self.placed = False
-        self.page = "main"
-        self.refreshers: list = []
         self.build()
-        self.center()
+        self.top.update_idletasks()
+        width, height = self.top.winfo_reqwidth(), self.top.winfo_reqheight()
+        left, top, right, bottom = monitor_work_area(app.root.winfo_x(), app.root.winfo_y())
+        place_window(self.top, left + max(0, (right - left - width) // 2), top + max(0, (bottom - top - height) // 2), width, height)
+        self.top.deiconify()
         self.top.focus_force()
+        self.tick()
 
     def alive(self) -> bool:
         try:
             return bool(self.top.winfo_exists())
         except tk.TclError:
             return False
+
+    # ------------------------------------------------------------------ layout
+    def build(self):
+        app, theme = self.app, self.app.theme
+        body, _ = make_chrome(self.top, app, tr("Mascot editor"), self.close)
+        outer = tk.Frame(body, bg=theme["desk"], padx=28, pady=10)
+        outer.pack()
+        header = tk.Frame(outer, bg=theme["desk"])
+        header.pack(fill="x")
+        titles = tk.Frame(header, bg=theme["desk"])
+        titles.pack(side="left")
+        tk.Label(titles, text=tr("MASCOT"), bg=theme["desk"], fg=theme["sec"], font=sb(8)).pack(anchor="w")
+        tk.Label(titles, text=tr("Mascot editor"), bg=theme["desk"], fg=theme["text"], font=sb(20)).pack(anchor="w")
+        actions = tk.Frame(header, bg=theme["desk"])
+        actions.pack(side="right")
+        button(actions, theme, tr("Reset"), self.reset).pack(side="left", padx=(0, 8))
+        button(actions, theme, tr("Cancel"), self.close).pack(side="left", padx=(0, 8))
+        button(actions, theme, tr("Save"), self.save, primary=True).pack(side="left")
+        columns = tk.Frame(outer, bg=theme["desk"])
+        columns.pack(pady=(18, 4))
+        left = tk.Frame(columns, bg=theme["desk"])
+        left.pack(side="left", padx=(0, 18), anchor="n")
+        right = tk.Frame(columns, bg=theme["desk"])
+        right.pack(side="left", anchor="n")
+        card(left, theme, self.W + 32, self.fill_preview, pad=16, outer=theme["desk"]).pack()
+        card(right, theme, 575, self.fill_animations, pad=16, outer=theme["desk"]).pack()
+
+    def fill_preview(self, inner):
+        theme = self.app.theme
+        bg = theme["card"]
+        tk.Label(inner, text=tr("Icons"), bg=bg, fg=theme["text"], font=sb(11)).pack(anchor="w")
+        tk.Label(inner, text=tr("Drag the gauge, the microphone and the shortcuts where you want them."), bg=bg, fg=theme["sec"],
+                 font=rg(9), wraplength=self.W - 10, justify="left").pack(anchor="w", pady=(2, 8))
+        self.canvas = tk.Canvas(inner, width=self.W, height=self.H, bg=theme["panel"], bd=0, highlightthickness=1,
+                                highlightbackground=theme["field_border"])
+        self.canvas.pack()
+        app = self.app
+        self.origin = (self.W // 2 - app.anchor_x, self.H // 2 - (app.idle_box[1] + app.idle_box[3]) // 2)
+        ox, oy = self.origin
+        # the box that can be grabbed to move the mascot itself
+        left, top, right, bottom = app.idle_box
+        self.canvas.create_rectangle(ox + left - 8, oy + top - 8, ox + right + 8, oy + bottom + 8, outline=theme["border"], dash=(3, 4))
+        self.sprite = self.canvas.create_image(ox + PAD, oy + PAD, anchor="nw")
+        top_image, bottom_image = app.button_images("ready")
+        pictures = {"top": top_image, "bottom": bottom_image, "rail": app.rail_base}
+        self.icon_images = {key: photo(image) for key, image in pictures.items()}
+        self.icon_sizes = {key: image.size for key, image in pictures.items()}
+        self.items = {key: self.canvas.create_image(0, 0, anchor="nw", image=self.icon_images[key], tags=("icon", key))
+                      for key in mascot_setup.ICON_IDS}
+        self.place_icons()
+        self.canvas.tag_bind("icon", "<ButtonPress-1>", self.start_drag)
+        self.canvas.tag_bind("icon", "<B1-Motion>", self.drag)
+        self.canvas.tag_bind("icon", "<ButtonRelease-1>", self.drop)
+        self.canvas.tag_bind("icon", "<Enter>", lambda event: self.canvas.configure(cursor="fleur"))
+        self.canvas.tag_bind("icon", "<Leave>", lambda event: self.canvas.configure(cursor=""))
+        button(inner, theme, tr("Reset the icons"), self.reset_icons).pack(anchor="w", pady=(10, 0))
+
+    def default_position(self, key: str) -> tuple[int, int]:
+        app = self.app
+        ox, oy = self.origin
+        if key == "rail":
+            width, height = self.icon_sizes["rail"]
+            x = ox + app.mascot_w + GAP if app.prefs["side"] == "right" else ox - GAP - width
+            return x, oy + (app.idle_box[1] + app.idle_box[3]) // 2 - height // 2
+        x = ox + app.anchor_x - BUTTON // 2
+        return (x, oy + app.idle_box[1] - GAP - BUTTON) if key == "top" else (x, oy + app.idle_box[3] + GAP)
+
+    def place_icons(self):
+        for key, item in self.items.items():
+            x, y = self.default_position(key)
+            width, height = self.icon_sizes[key]
+            dx, dy = self.layout[key]
+            self.canvas.coords(item, max(0, min(self.W - width, x + dx)), max(0, min(self.H - height, y + dy)))
+
+    def start_drag(self, event):
+        key = next(tag for tag in self.canvas.gettags("current") if tag in mascot_setup.ICON_IDS)
+        self.grab = (key, event.x, event.y, list(self.layout[key]))
+        self.canvas.tag_raise(self.items[key])
+
+    def drag(self, event):
+        if self.grab is None:
+            return
+        key, x0, y0, start = self.grab
+        width, height = self.icon_sizes[key]
+        default_x, default_y = self.default_position(key)
+        limit = mascot_setup.LIMIT
+        dx = max(-limit, min(limit, start[0] + event.x - x0))
+        dy = max(-limit, min(limit, start[1] + event.y - y0))
+        dx = max(-default_x, min(self.W - width - default_x, dx))             # stay inside the preview
+        dy = max(-default_y, min(self.H - height - default_y, dy))
+        self.layout[key] = [dx, dy]
+        self.place_icons()
+
+    def drop(self, event):
+        self.grab = None
+
+    def reset_icons(self):
+        self.layout = {key: [0, 0] for key in mascot_setup.ICON_IDS}
+        self.place_icons()
+
+    def fill_animations(self, inner):
+        theme = self.app.theme
+        bg = theme["card"]
+        tk.Label(inner, text=tr("Animations"), bg=bg, fg=theme["text"], font=sb(11)).pack(anchor="w")
+        tk.Label(inner, text=tr("Pick an event, then the animation it should play."), bg=bg, fg=theme["sec"], font=rg(9),
+                 wraplength=490, justify="left").pack(anchor="w", pady=(2, 8))
+        lists = tk.Frame(inner, bg=bg)
+        lists.pack(fill="x")
+        style = dict(exportselection=False, activestyle="none", relief="flat", bg=theme["field"], fg=theme["text"],
+                     selectbackground=theme["accent"], selectforeground=theme["on_accent"], highlightthickness=1,
+                     highlightbackground=theme["field_border"], highlightcolor=theme["field_border"], font=rg(10), bd=0)
+        self.event_list = tk.Listbox(lists, width=37, height=14, **style)
+        self.event_list.pack(side="left")
+        self.clip_list = tk.Listbox(lists, width=25, height=14, **style)
+        self.clip_list.pack(side="left", padx=(10, 0))
+        self.clip_names: list[str | None] = []
+        self.event_list.bind("<<ListboxSelect>>", self.pick_event)
+        self.clip_list.bind("<<ListboxSelect>>", self.pick_clip)
+        self.status = tk.Label(inner, bg=bg, fg=theme["sec"], font=rg(9), anchor="w", justify="left", wraplength=490)
+        self.status.pack(fill="x", pady=(8, 0))
+        button(inner, theme, tr("Play again"), lambda: self.play(self.clip_name)).pack(anchor="w", pady=(8, 0))
+        self.refresh_events()
+        self.event_list.selection_set(0)
+        self.pick_event()
+
+    # ------------------------------------------------------------------ animations
+    def automatic(self, event: str) -> str | None:
+        return self.mset.automatic(event)
+
+    def chosen(self, event: str) -> str | None:
+        name = self.animations.get(event)
+        return name if name in self.mset.clips else None
+
+    def refresh_events(self):
+        selected = self.event_list.curselection()
+        self.event_list.delete(0, "end")
+        for event, label in mascot_setup.EVENTS:
+            chosen = self.chosen(event)
+            self.event_list.insert("end", f"{tr(label)}  ·  {chosen if chosen else tr('automatic')}")
+        for index in selected:
+            self.event_list.selection_set(index)
+
+    def pick_event(self, _event=None):
+        selection = self.event_list.curselection()
+        if not selection:
+            return
+        self.event = mascot_setup.EVENTS[selection[0]][0]
+        automatic = self.automatic(self.event)
+        self.clip_list.delete(0, "end")
+        self.clip_names = [None] + sorted(self.mset.clips, key=str.lower)
+        self.clip_list.insert("end", tr("Automatic") + (f"  ({automatic})" if automatic else ""))
+        for name in self.clip_names[1:]:
+            self.clip_list.insert("end", f"{name}  ·  {len(self.mset.clips[name].frames)}")
+        current = self.chosen(self.event)
+        index = self.clip_names.index(current) if current in self.clip_names else 0
+        self.clip_list.selection_set(index)
+        self.clip_list.see(index)
+        only_one = len(self.mset.clips) <= 1
+        self.status.configure(text=tr("This mascot has a single animation.") if only_one else "")
+        self.play(current or automatic or "idle")
+
+    def pick_clip(self, _event=None):
+        selection = self.clip_list.curselection()
+        if not selection:
+            return
+        name = self.clip_names[selection[0]]
+        if name is None:
+            self.animations.pop(self.event, None)
+        else:
+            self.animations[self.event] = name
+        self.refresh_events()
+        self.play(name or self.automatic(self.event) or "idle")
+
+    def play(self, name: str):
+        self.clip_name = name if name in self.mset.clips else "idle"
+        self.frame_index = 0
+        if self.timer is not None:
+            self.top.after_cancel(self.timer)
+            self.timer = None
+        self.tick()
+
+    def sprite_image(self, name: str, index: int):
+        key = (name, index)
+        if key not in self.sprite_images:
+            self.sprite_images[key] = photo(self.mset.clips[name].frames[index])
+        return self.sprite_images[key]
+
+    def tick(self):
+        if not self.alive():
+            return
+        clip = self.mset.clips.get(self.clip_name) or self.mset.clips["idle"]
+        index = min(self.frame_index, len(clip.frames) - 1)
+        self.canvas.itemconfigure(self.sprite, image=self.sprite_image(self.clip_name if self.clip_name in self.mset.clips else "idle", index))
+        following = clip.next_index(index)
+        self.frame_index = following if following < len(clip.frames) else 0
+        self.timer = self.top.after(max(40, clip.delays[index]), self.tick)
+
+    # ------------------------------------------------------------------ finishing
+    def reset(self):
+        self.animations = {}
+        self.reset_icons()
+        self.refresh_events()
+        self.pick_event()
+
+    def save(self):
+        app = self.app
+        layout = {key: value for key, value in self.layout.items() if value != [0, 0]}
+        for table in (app.prefs, app.saved_prefs):
+            mascot_setup.store(table, self.mascot, self.animations, layout)
+        prefs.save(app.saved_prefs)
+        app.mset.overrides = mascot_setup.overrides(app.prefs, self.mascot)
+        app.play_base()
+        app.position_all()
+        self.close()
+
+    def close(self):
+        if self.timer is not None:
+            try:
+                self.top.after_cancel(self.timer)
+            except tk.TclError:
+                pass
+        self.top.destroy()
+
+
+class XpRadio(tk.Frame):
+    """A Luna radio button with its caption; behaves like the toggle buttons of the other themes (command, restyle_toggle)."""
+
+    _images: dict = {}
+
+    def __init__(self, parent, theme: dict, caption: str, command=None, bg: str | None = None, font=None):
+        bg = bg or theme["card"]
+        super().__init__(parent, bg=bg, cursor="hand2")
+        self.command = command
+        self.dot = tk.Label(self, bg=bg, bd=0, image=self.image(False))
+        self.dot.pack(side="left")
+        self.text = tk.Label(self, text=caption, bg=bg, fg=theme["text"], font=font or rg(9), padx=4)
+        self.text.pack(side="left")
+        for widget in (self, self.dot, self.text):
+            widget.bind("<Button-1>", lambda event: self.invoke())
+
+    @classmethod
+    def image(cls, selected: bool):
+        if selected not in cls._images:
+            cls._images[selected] = photo(xp_radio_image(selected))
+        return cls._images[selected]
+
+    def invoke(self) -> None:
+        if self.command:
+            self.command()
+
+    def configure(self, cnf=None, **options):
+        if "command" in options:
+            self.command = options.pop("command")
+        if cnf or options:
+            return super().configure(cnf, **options)
+
+    def set_selected(self, selected: bool) -> None:
+        self.dot.configure(image=self.image(selected))
+
+
+def make_toggle(parent, theme: dict, caption: str, command, font, padx: int, pady: int, bg: str | None = None):
+    """A choice button: a push button in the modern themes, a radio button in Windows XP."""
+    if theme["titlebar"]:
+        return XpRadio(parent, theme, caption, command, bg, rg(9))
+    return tk.Button(parent, text=caption, command=command, relief="flat", bd=0, highlightthickness=1, font=font, padx=padx, pady=pady,
+                     cursor="hand2")
+
+
+def field_style(theme: dict) -> dict:
+    """Colours of a text box: white with a blue-grey rim in XP, the panel colour in the other themes."""
+    return dict(relief="flat", bg=theme["field"], fg=theme["text"], insertbackground=theme["text"], highlightthickness=1,
+                highlightbackground=theme["field_border"], highlightcolor=theme["field_border"] if theme["titlebar"] else theme["accent"])
+
+
+class SettingsWindow:
+    """Personnalisation: mascot, size, side of the shortcut rail and theme (applied live, edited in place)."""
+
+    def __init__(self, app: RoverApp, page: str = "main", peer: "SettingsWindow | None" = None):
+        self.app = app
+        self.top = tk.Toplevel(app.root)
+        self.top.withdraw()                     # built out of sight; show() reveals it already laid out
+        self.top.overrideredirect(True)
+        self.top.attributes("-topmost", True)
+        self.images: list = []
+        self.preview_images: list = []
+        self.placed = False
+        self.page = page
+        self.peer = peer                         # the other page (main <-> advanced)
+        if peer is not None:
+            peer.peer = self
+        self.visible = False
+        self.dirty = False
+        self.refreshers: list = []
+        self.build()
+
+    def alive(self) -> bool:
+        try:
+            return bool(self.top.winfo_exists())
+        except tk.TclError:
+            return False
+
+    def pair(self) -> list:
+        return [self] + ([self.peer] if self.peer is not None else [])
+
+    def show(self, origin: tuple[int, int] | None = None) -> None:
+        if self.dirty:
+            self.dirty = False
+            self.build()
+        if origin is None:
+            self.center()
+        else:
+            self.top.update_idletasks()
+            place_window(self.top, origin[0], origin[1], self.top.winfo_reqwidth(), self.top.winfo_reqheight())
+            self.placed = True
+        self.top.deiconify()
+        self.top.lift()
+        self.top.focus_force()
+        self.visible = True
+
+    def hide(self) -> None:
+        self.top.withdraw()
+        self.visible = False
+        for window in self.pair():
+            if window.dirty and not window.visible:
+                window.top.after(200, window.refresh_hidden)
+
+    def refresh_hidden(self) -> None:
+        if self.dirty and not self.visible and self.alive():
+            self.dirty = False
+            self.build()
+
+    def invalidate(self) -> None:
+        """Something the pages show has changed: rebuild the visible page now, the hidden one when idle."""
+        for window in self.pair():
+            window.dirty = True
+            if window.visible:
+                window.dirty = False
+                window.build()
+            else:
+                window.top.after(200, window.refresh_hidden)
 
     def center(self):
         self.top.update_idletasks()
@@ -1493,7 +2273,9 @@ class SettingsWindow:
             app.language = app.prefs["language"]
             app.apply_look()
             app.apply_advanced()
-        self.top.destroy()
+            for window in self.pair():
+                window.dirty = True          # their widgets still show the changes that were just undone
+        self.hide()
 
     def save(self):
         app = self.app
@@ -1505,7 +2287,7 @@ class SettingsWindow:
             except OSError as exc:
                 app.log_exception(type(exc), exc, exc.__traceback__)
         app.apply_advanced()
-        self.top.destroy()
+        self.hide()
 
     def reset(self):
         defaults = prefs.DEFAULTS
@@ -1517,12 +2299,12 @@ class SettingsWindow:
         self.app.prefs = fresh
         self.app.apply_look()
         self.app.apply_advanced()
-        self.build()
+        self.invalidate()
 
     def set(self, **changes):
         self.app.update_pref(**changes)
         if "theme" in changes or "ui_language" in changes:
-            self.build()          # every colour or every label changes
+            self.invalidate()     # every colour or every label changes, on both pages
         else:
             self.sync()           # touch only what changed: no flicker, no scroll or position reset
 
@@ -1545,9 +2327,9 @@ class SettingsWindow:
         header.pack(fill="x")
         titles = tk.Frame(header, bg=theme["desk"])
         titles.pack(side="left")
-        tk.Label(titles, text=tr("SETTINGS"), bg=theme["desk"], fg=theme["sec"], font=(FONT_SEMIBOLD, 8)).pack(anchor="w")
+        tk.Label(titles, text=tr("SETTINGS"), bg=theme["desk"], fg=theme["sec"], font=sb(8)).pack(anchor="w")
         tk.Label(titles, text=tr("Advanced settings") if advanced else tr("Customization"), bg=theme["desk"], fg=theme["text"],
-                 font=(FONT_SEMIBOLD, 20)).pack(anchor="w")
+                 font=sb(20)).pack(anchor="w")
         actions = tk.Frame(header, bg=theme["desk"])
         actions.pack(side="right")
         button(actions, theme, tr("← Back") if advanced else tr("Advanced settings →"), self.toggle_page).pack(side="left", padx=(0, 8))
@@ -1562,7 +2344,7 @@ class SettingsWindow:
         columns.pack(pady=(18, 4))
         preview = tk.Frame(columns, bg=theme["desk"])
         preview.pack(side="left", padx=(0, 18), anchor="n")
-        tk.Label(preview, text=tr("LIVE PREVIEW"), bg=theme["desk"], fg=theme["sec"], font=(FONT_SEMIBOLD, 8)).pack(anchor="w", pady=(0, 6))
+        tk.Label(preview, text=tr("LIVE PREVIEW"), bg=theme["desk"], fg=theme["sec"], font=sb(8)).pack(anchor="w", pady=(0, 6))
         self.preview_canvas = tk.Canvas(preview, width=300, height=340, bg=theme["desk"], bd=0, highlightthickness=0)
         self.preview_canvas.pack(pady=(0, 12))
         self.section(preview, tr("Shortcuts on the right"), self.fill_apps, width=300).pack(pady=(0, 12))
@@ -1581,8 +2363,10 @@ class SettingsWindow:
             place_window(self.top, x, y, self.top.winfo_reqwidth(), self.top.winfo_reqheight())
 
     def toggle_page(self):
-        self.page = "main" if self.page == "advanced" else "advanced"
-        self.build()
+        target = self.app.ensure_advanced() if self.page == "main" else self.app.ensure_settings()
+        origin = (self.top.winfo_x(), self.top.winfo_y())
+        self.hide()
+        target.show(origin)
 
     # ------------------------------------------------------------------ advanced page
 
@@ -1595,7 +2379,8 @@ class SettingsWindow:
         right = tk.Frame(columns, bg=theme["desk"])
         right.pack(side="left", anchor="n")
         self.section(left, tr("General"), self.fill_general, width=440).pack(pady=(0, 12))
-        self.section(left, tr("Speech recognition"), self.fill_speech, width=440).pack()
+        self.section(left, tr("Speech recognition"), self.fill_speech, width=440).pack(pady=(0, 12))
+        self.section(left, tr("Context between dictations"), self.fill_context, width=440).pack()
         self.section(right, tr("Transcription style"), self.fill_style, width=440).pack(pady=(0, 12))
         self.section(right, tr("Text rewriting"), self.fill_rewrite, width=440).pack()
         self.refresh_advanced()
@@ -1612,20 +2397,18 @@ class SettingsWindow:
             return self.app.startup_actual
         return bool(value)
 
-    def choice(self, parent, options, getter, setter, pady=(10, 0), label=None, label_width=None):
+    def choice(self, parent, options, getter, setter, pady=(10, 0), label=None, label_width=None, compact=False):
         """A label on the left and a row of exclusive buttons on the right; updates in place."""
         theme = self.app.theme
         bg = theme["card"]
         row = tk.Frame(parent, bg=bg)
         row.pack(fill="x", pady=pady)
         if label:
-            tk.Label(row, text=label, bg=bg, fg=theme["text"], font=(FONT_REGULAR, 10)).pack(side="left")
+            tk.Label(row, text=label, bg=bg, fg=theme["text"], font=rg(10)).pack(side="left")
         buttons = []
         for caption, value in reversed(options):
-            widget = tk.Button(row, text=caption, relief="flat", bd=0, highlightthickness=1, font=(FONT_SEMIBOLD, 9),
-                               padx=11, pady=4, cursor="hand2")
-            widget.configure(command=lambda v=value: (setter(v), self.refresh_advanced()))
-            widget.pack(side="right", padx=(6, 0))
+            widget = make_toggle(row, theme, caption, lambda v=value: (setter(v), self.refresh_advanced()), sb(9), 7 if compact else 11, 4, bg)
+            widget.pack(side="right", padx=(4 if compact else 6, 0) if not theme["titlebar"] else (8, 0))
             buttons.append((value, widget))
 
         def refresh():
@@ -1639,12 +2422,71 @@ class SettingsWindow:
     def entry(self, parent, initial: str, on_change, width: int = 26):
         theme = self.app.theme
         variable = tk.StringVar(value=initial)
-        field = tk.Entry(parent, textvariable=variable, width=width, relief="flat", bg=theme["panel"], fg=theme["text"],
-                         insertbackground=theme["text"], highlightthickness=1, highlightbackground=theme["border"],
-                         highlightcolor=theme["accent"], font=(FONT_MONO, 9))
+        field = tk.Entry(parent, textvariable=variable, width=width, font=(FONT_MONO, 9), **field_style(theme))
         field.bind("<Button-1>", lambda event: field.focus_force())
         variable.trace_add("write", lambda *_: on_change(variable.get().strip()))
         return field, variable
+
+    def fill_shortcut(self, inner):
+        """Show the dictation shortcut and let it be changed by pressing the new combination."""
+        app, theme = self.app, self.app.theme
+        bg = theme["card"]
+        row = tk.Frame(inner, bg=bg)
+        row.pack(fill="x", pady=(10, 0))
+        tk.Label(row, text=tr("Dictation shortcut"), bg=bg, fg=theme["text"], font=rg(10)).pack(side="left")
+        button(row, theme, tr("Default"), lambda: choose(hotkeys.DEFAULT)).pack(side="right")
+        change = button(row, theme, tr("Change…"), lambda: capture())
+        change.pack(side="right", padx=(0, 6))
+        shown = tk.Label(row, text=hotkeys.label(app.prefs["hotkey"]), bg=theme["field"], fg=theme["text"], font=(FONT_MONO, 9), padx=10, pady=3,
+                         highlightthickness=1, highlightbackground=theme["field_border"])
+        shown.pack(side="right", padx=(0, 8))
+        note = tk.Label(inner, bg=bg, fg=theme["sec"], font=rg(8), anchor="w", justify="left", wraplength=400)
+        state = {"binding": None}
+
+        def say(text: str = "", error: bool = False):
+            note.configure(text=text, fg=theme["err"] if error else theme["sec"])
+            if text:
+                note.pack(fill="x", pady=(2, 0))
+            else:
+                note.pack_forget()
+
+        def finish(message: str = "", error: bool = False):
+            if state["binding"] is not None:
+                shown.unbind("<KeyPress>", state["binding"])
+                state["binding"] = None
+            shown.configure(text=hotkeys.label(app.prefs["hotkey"]))
+            say(message, error)
+            app.apply_hotkey()                                      # back to the real shortcut (it was released while listening)
+
+        def choose(spec: str):
+            if state["binding"] is not None:
+                finish()
+            app.prefs["hotkey"] = spec
+            if not app.apply_hotkey():
+                finish(tr("That shortcut is already used by another program"), True)
+            else:
+                finish()
+
+        def pressed(event):
+            if event.keysym == "Escape":
+                finish()
+                return "break"
+            spec = hotkeys.from_keypress(pressed_modifiers(), event.keysym)
+            if spec is None:
+                if event.keysym not in ("Control_L", "Control_R", "Alt_L", "Alt_R", "Shift_L", "Shift_R"):
+                    say(tr("Use Ctrl, Alt or Win with a letter, a digit or a function key"), True)
+                return "break"
+            finish()
+            choose(spec)
+            return "break"
+
+        def capture():
+            unregister_hotkey()                                     # so that the current combination reaches this window too
+            app.hotkey_ok = False                                   # (apply_hotkey will claim it again)
+            shown.configure(text=tr("Press the new shortcut…"))
+            say(tr("Esc to cancel"))
+            state["binding"] = shown.bind("<KeyPress>", pressed)          # on the label: "break" then also keeps Esc from closing the window
+            shown.focus_force()
 
     def fill_general(self, inner):
         app = self.app
@@ -1654,6 +2496,11 @@ class SettingsWindow:
                     lambda v: app.prefs.__setitem__("insert", v), label=tr("When the text is ready"))
         self.choice(inner, (("Français", "fr"), ("English", "en")), lambda: app.prefs["language"],
                     lambda v: (app.prefs.__setitem__("language", v), app.apply_advanced()), label=tr("Dictation language"))
+        self.fill_shortcut(inner)
+        self.choice(inner, ((tr("On"), "on"), (tr("Off"), "off")), lambda: "on" if app.prefs["live_transcript"] else "off",
+                    lambda v: app.prefs.__setitem__("live_transcript", v == "on"), label=tr("Live transcription"))
+        tk.Label(inner, text=tr("Shows the words in the microphone bubble as you speak. GPU only."), bg=app.theme["card"], fg=app.theme["sec"],
+                 font=rg(8), wraplength=400, justify="left").pack(anchor="w", pady=(2, 0))
 
     def fill_speech(self, inner):
         app = self.app
@@ -1669,6 +2516,7 @@ class SettingsWindow:
         engine = config.get("engine", "local")
         if engine == "local":
             self.fill_local_models(inner)
+            self.fill_cpu_download(inner)
         elif engine == "gpu":
             self.fill_gpu(inner)
         else:
@@ -1687,13 +2535,13 @@ class SettingsWindow:
             cell.pack(fill="both", expand=True)
             top = tk.Frame(cell, bg=theme["panel"], cursor="hand2")
             top.pack(fill="x", padx=8, pady=(6, 0))
-            tk.Label(top, text=name, bg=theme["panel"], fg=theme["text"], font=(FONT_SEMIBOLD, 10), cursor="hand2").pack(side="left")
+            tk.Label(top, text=name, bg=theme["panel"], fg=theme["text"], font=sb(10), cursor="hand2").pack(side="left")
             if name == "base":
-                tk.Label(top, text="★", bg=theme["panel"], fg=theme["accent"], font=(FONT_SEMIBOLD, 9), cursor="hand2").pack(side="left", padx=(4, 0))
+                tk.Label(top, text="★", bg=theme["panel"], fg=theme["accent"], font=sb(9), cursor="hand2").pack(side="left", padx=(4, 0))
             size_text = (f"≈{accel.download_size_mb(name)} MB" + (" ✓" if accel.model_installed(name) else "")) if on_gpu else size
             tk.Label(cell, text=size_text, bg=theme["panel"], fg=theme["ok"] if on_gpu and accel.model_installed(name) else theme["accent"],
                      font=(FONT_MONO, 8), cursor="hand2").pack(anchor="w", padx=8)
-            tk.Label(cell, text=tr(hint), bg=theme["panel"], fg=theme["sec"], font=(FONT_REGULAR, 8), wraplength=112, justify="left",
+            tk.Label(cell, text=tr(hint), bg=theme["panel"], fg=theme["sec"], font=rg(8), wraplength=112, justify="left",
                      cursor="hand2").pack(anchor="w", padx=8, pady=(0, 7))
             for widget in (holder, cell, top, *cell.winfo_children(), *top.winfo_children()):
                 widget.bind("<Button-1>", lambda event, n=name: (app.prefs.__setitem__("whisper_model", n), app.apply_advanced(),
@@ -1710,7 +2558,56 @@ class SettingsWindow:
         self.refreshers.append(refresh)
         if not on_gpu:
             tk.Label(inner, text="★ " + tr("Fast default. Models run on this PC and download once; compare them with the benchmark."), bg=bg,
-                     fg=theme["sec"], font=(FONT_REGULAR, 8), wraplength=400, justify="left").pack(anchor="w", pady=(2, 0))
+                     fg=theme["sec"], font=rg(8), wraplength=400, justify="left").pack(anchor="w", pady=(2, 0))
+
+    def fill_cpu_download(self, inner):
+        """Say whether the chosen CPU model is on this PC and, if not, fetch it from a button with a progress bar."""
+        app, theme = self.app, self.app.theme
+        bg = theme["card"]
+        name = app.prefs["whisper_model"]
+        size = next((size for model, size, _ in prefs.WHISPER_MODELS if model == name), "")
+        present = modelstore.model_downloaded(name)
+        row = tk.Frame(inner, bg=bg)
+        row.pack(fill="x", pady=(2, 0))
+        tk.Label(row, text="✓" if present else "•", bg=bg, fg=theme["ok"] if present else theme["sec"], font=sb(9), width=2).pack(side="left")
+        state = tr("installed") if present else f"{tr('to download')} {size}"
+        tk.Label(row, text=tr("Model {model} · {state}").format(model=name, state=state), bg=bg, fg=theme["text"] if present else theme["sec"],
+                 font=rg(9), anchor="w").pack(side="left")
+        if present:
+            return
+        message = tk.Label(inner, bg=bg, fg=theme["sec"], font=rg(8), anchor="w", justify="left", wraplength=400)
+        message.pack(fill="x", pady=(4, 0))
+        bar = tk.Canvas(inner, width=400, height=16 if theme["blocks"] else 6, bg=bg, bd=0, highlightthickness=0)
+
+        def ui(function):
+            try:
+                self.top.after(0, function)
+            except (RuntimeError, tk.TclError):
+                pass
+
+        def progress(done: int, total: int):
+            bar.pack(pady=(4, 0), before=message)
+            paint_bar(bar, 400, 100 * done / total if total else 0, theme, "accent")
+            message.configure(text=f"{tr('Downloading the model')}  {done / 1e6:.0f} / {total / 1e6:.0f} MB  ·  {100 * done // max(total, 1)} %",
+                              fg=theme["sec"])
+
+        def download():
+            fetch.configure(state="disabled")
+
+            def work():
+                try:
+                    modelstore.download_model(name, lambda d, t: ui(lambda: progress(d, t)))
+                except modelstore.ModelError as exc:
+                    detail = str(exc)                 # `exc` is gone by the time the interface runs the callback
+                    ui(lambda: (message.configure(text=detail, fg=theme["err"]), fetch.configure(state="normal")))
+                    return
+                app.root.after(0, app.recorder.warm_up)
+                ui(self.build)
+
+            threading.Thread(target=work, daemon=True).start()
+
+        fetch = button(inner, theme, tr("Download the model"), download, primary=True)
+        fetch.pack(anchor="w", pady=(6, 0))
 
     def on_model_picked(self):
         """In GPU mode the status rows depend on the chosen model."""
@@ -1730,8 +2627,8 @@ class SettingsWindow:
             row = tk.Frame(inner, bg=bg)
             row.pack(fill="x", pady=(2, 0))
             mark = {True: ("✓", theme["ok"]), False: ("✗", theme["err"]), None: ("•", theme["sec"])}[ok]
-            tk.Label(row, text=mark[0], bg=bg, fg=mark[1], font=(FONT_SEMIBOLD, 9), width=2).pack(side="left")
-            tk.Label(row, text=text, bg=bg, fg=theme["text"] if ok else theme["sec"], font=(FONT_REGULAR, 9), anchor="w", justify="left",
+            tk.Label(row, text=mark[0], bg=bg, fg=mark[1], font=sb(9), width=2).pack(side="left")
+            tk.Label(row, text=text, bg=bg, fg=theme["text"] if ok else theme["sec"], font=rg(9), anchor="w", justify="left",
                      wraplength=380).pack(side="left", fill="x")
 
         best = info["best"]
@@ -1743,9 +2640,9 @@ class SettingsWindow:
                                                                            else " · " + tr("to download"))))
         status(accel.model_installed(model), tr("Model {model}").format(model=model) + (" · " + tr("installed") if accel.model_installed(model)
                                                                                         else f" · {tr('to download')} ≈{accel.download_size_mb(model)} MB"))
-        message = tk.Label(inner, bg=bg, fg=theme["sec"], font=(FONT_REGULAR, 8), anchor="w", justify="left", wraplength=400)
+        message = tk.Label(inner, bg=bg, fg=theme["sec"], font=rg(8), anchor="w", justify="left", wraplength=400)
         message.pack(fill="x", pady=(6, 0))
-        bar = tk.Canvas(inner, width=400, height=6, bg=bg, bd=0, highlightthickness=0)
+        bar = tk.Canvas(inner, width=400, height=16 if theme["blocks"] else 6, bg=bg, bd=0, highlightthickness=0)
 
         def ui(function):
             try:
@@ -1758,11 +2655,8 @@ class SettingsWindow:
 
         def draw_progress(done: int, total: int, label: str):
             bar.pack(pady=(4, 0))
-            bar.delete("all")
-            bar.create_line(3, 3, 397, 3, width=6, capstyle="round", fill=theme["track"])
-            if total:
-                bar.create_line(3, 3, 3 + 394 * done / total, 3, width=6, capstyle="round", fill=theme["accent"])
-            say(f"{label} {done / 1e6:.0f} / {total / 1e6:.0f} MB" if total else label)
+            paint_bar(bar, 400, 100 * done / total if total else 0, theme, "accent")
+            say(f"{label}  {done / 1e6:.0f} / {total / 1e6:.0f} MB  ·  {100 * done // total} %" if total else label)
 
         def set_up():
             setup_button.configure(state="disabled")
@@ -1774,7 +2668,8 @@ class SettingsWindow:
                     if not accel.model_installed(model):
                         accel.install_model(model, lambda d, t: ui(lambda: draw_progress(d, t, tr("Downloading the model"))))
                 except accel.AccelError as exc:
-                    ui(lambda: (say(str(exc), False), setup_button.configure(state="normal")))
+                    detail = str(exc)
+                    ui(lambda: (say(detail, False), setup_button.configure(state="normal")))
                     return
                 ui(self.build)
 
@@ -1793,7 +2688,8 @@ class SettingsWindow:
                     ui(lambda: say(tr("✓ GPU ready: model loaded in {load} s, answers in {run} s").format(
                         load=f"{loaded:.1f}", run=f"{time.perf_counter() - started:.2f}"), True))
                 except accel.AccelError as exc:
-                    ui(lambda: say("✗ " + str(exc), False))
+                    detail = str(exc)
+                    ui(lambda: say("✗ " + detail, False))
 
             threading.Thread(target=work, daemon=True).start()
 
@@ -1804,7 +2700,8 @@ class SettingsWindow:
         actions = tk.Frame(inner, bg=bg)
         actions.pack(fill="x", pady=(6, 0))
         needs_setup = not (accel.runtime_installed() and accel.model_installed(model))
-        setup_button = button(actions, theme, tr("Set up GPU acceleration"), set_up, primary=True)
+        setup_button = button(actions, theme, tr("Set up GPU acceleration") if not accel.runtime_installed() else tr("Download the model"),
+                              set_up, primary=True)
         if needs_setup and info["vulkan_ready"] and accel.runtime_published():
             setup_button.pack(side="left")
         elif not needs_setup:
@@ -1814,7 +2711,7 @@ class SettingsWindow:
         button(actions, theme, tr("Detect again"), refresh_detection).pack(side="right")
         tk.Label(inner, text=tr("Downloads only happen when you press the button: the runtime is built from public source by this project "
                                 "(checksum verified), the model comes from the whisper.cpp repository on Hugging Face (checksum verified)."),
-                 bg=bg, fg=theme["sec"], font=(FONT_REGULAR, 8), wraplength=400, justify="left").pack(anchor="w", pady=(6, 0))
+                 bg=bg, fg=theme["sec"], font=rg(8), wraplength=400, justify="left").pack(anchor="w", pady=(6, 0))
 
     def fill_remote(self, inner):
         app, theme = self.app, self.app.theme
@@ -1826,7 +2723,7 @@ class SettingsWindow:
         def row(label: str):
             frame = tk.Frame(inner, bg=bg)
             frame.pack(fill="x", pady=(8, 0))
-            tk.Label(frame, text=label, bg=bg, fg=theme["text"], font=(FONT_REGULAR, 10)).pack(side="left")
+            tk.Label(frame, text=label, bg=bg, fg=theme["text"], font=rg(10)).pack(side="left")
             return frame
 
         # model
@@ -1838,24 +2735,26 @@ class SettingsWindow:
             chips = tk.Frame(inner, bg=bg)
             chips.pack(fill="x", pady=(5, 0))
             for index, name in enumerate(preset["models"]):
-                chip = tk.Button(chips, text=name, relief="flat", bd=0, highlightthickness=1, font=(FONT_MONO, 8), padx=7, pady=2,
-                                 cursor="hand2", command=lambda v=name: variable.set(v))
+                if theme["titlebar"]:
+                    chip = button(chips, theme, name, lambda v=name: variable.set(v))
+                else:
+                    chip = tk.Button(chips, text=name, relief="flat", bd=0, highlightthickness=1, font=(FONT_MONO, 8), padx=7, pady=2,
+                                     cursor="hand2", command=lambda v=name: variable.set(v))
+                    restyle_toggle(chip, theme, False, bg)
                 chip.grid(row=index // 2, column=index % 2, padx=(5, 0), pady=(0, 4), sticky="e")
-                restyle_toggle(chip, theme, False, bg)
             chips.grid_columnconfigure(0, weight=1)
         if engine == "custom":
             frame = row(tr("Service address"))
             address, _ = self.entry(frame, config.get("base_url", ""), lambda v: config.__setitem__("base_url", v), width=30)
             address.pack(side="right", ipady=3)
             tk.Label(inner, text=tr("OpenAI-compatible, for example https://api.example.com/v1"), bg=bg, fg=theme["sec"],
-                     font=(FONT_REGULAR, 8)).pack(anchor="e")
+                     font=rg(8)).pack(anchor="e")
 
         # API key: typed here, stored encrypted for this Windows account, never shown again
         frame = row(tr("API key"))
-        key_field = tk.Entry(frame, show="•", width=22, relief="flat", bg=theme["panel"], fg=theme["text"], insertbackground=theme["text"],
-                             highlightthickness=1, highlightbackground=theme["border"], highlightcolor=theme["accent"], font=(FONT_MONO, 9))
+        key_field = tk.Entry(frame, show="•", width=22, font=(FONT_MONO, 9), **field_style(theme))
         key_field.bind("<Button-1>", lambda event: key_field.focus_force())
-        status = tk.Label(inner, bg=bg, fg=theme["sec"], font=(FONT_REGULAR, 8), anchor="w", justify="left", wraplength=400)
+        status = tk.Label(inner, bg=bg, fg=theme["sec"], font=rg(8), anchor="w", justify="left", wraplength=400)
 
         def show_status(text: str | None = None, good: bool | None = None):
             source = transcribe.key_source(config)
@@ -1888,7 +2787,7 @@ class SettingsWindow:
             threading.Thread(target=work, daemon=True).start()
 
         for caption, command in ((tr("Test"), test), (tr("Remove"), remove_key), (tr("Save key"), save_key)):
-            tk.Button(frame, text=caption, command=command, relief="flat", bd=0, highlightthickness=1, font=(FONT_SEMIBOLD, 8),
+            tk.Button(frame, text=caption, command=command, relief="flat", bd=0, highlightthickness=1, font=sb(8),
                       padx=8, pady=3, cursor="hand2", bg=theme["card"], fg=theme["text"], activebackground=theme["border"],
                       highlightbackground=theme["border"]).pack(side="right", padx=(5, 0))
         key_field.pack(side="right", ipady=3)
@@ -1896,7 +2795,7 @@ class SettingsWindow:
         show_status()
         tk.Label(inner, text=tr("The recording is sent to this service to be transcribed. An API key is required: a ChatGPT or Codex "
                                 "sign-in does not cover the audio API, which the service bills separately."),
-                 bg=bg, fg=theme["sec"], font=(FONT_REGULAR, 8), wraplength=400, justify="left").pack(anchor="w", pady=(6, 0))
+                 bg=bg, fg=theme["sec"], font=rg(8), wraplength=400, justify="left").pack(anchor="w", pady=(6, 0))
 
     def fill_rewrite(self, inner):
         app, theme = self.app, self.app.theme
@@ -1904,7 +2803,7 @@ class SettingsWindow:
         self.choice(inner, ((tr("Automatic"), "auto"), ("Codex", "codex"), ("Claude", "claude"), (tr("Off"), "off")),
                     lambda: app.prefs["rewrite_provider"], lambda v: app.prefs.__setitem__("rewrite_provider", v),
                     label=tr("Rewrite with"))
-        status = tk.Label(inner, bg=bg, fg=theme["sec"], font=(FONT_REGULAR, 8), anchor="w", justify="left")
+        status = tk.Label(inner, bg=bg, fg=theme["sec"], font=rg(8), anchor="w", justify="left")
         status.pack(fill="x", pady=(4, 0))
 
         def refresh_status():
@@ -1916,26 +2815,46 @@ class SettingsWindow:
         def model_row(label: str, key: str, presets=()):
             row = tk.Frame(inner, bg=bg)
             row.pack(fill="x", pady=(10, 0))
-            tk.Label(row, text=label, bg=bg, fg=theme["text"], font=(FONT_REGULAR, 10)).pack(side="left")
+            tk.Label(row, text=label, bg=bg, fg=theme["text"], font=rg(10)).pack(side="left")
             field, variable = self.entry(row, app.prefs[key].get("model", ""), lambda v, k=key: app.prefs[k].__setitem__("model", v))
             field.pack(side="right", ipady=3)
             if presets:
                 chips = tk.Frame(inner, bg=bg)
                 chips.pack(fill="x", pady=(5, 0))
                 for caption, value in reversed(presets):
-                    chip = tk.Button(chips, text=caption, relief="flat", bd=0, highlightthickness=1, font=(FONT_SEMIBOLD, 8), padx=8, pady=2,
-                                     cursor="hand2", command=lambda v=value, var=variable: var.set(v))
+                    if theme["titlebar"]:
+                        chip = button(chips, theme, caption, lambda v=value, var=variable: var.set(v))
+                    else:
+                        chip = tk.Button(chips, text=caption, relief="flat", bd=0, highlightthickness=1, font=sb(8), padx=8, pady=2,
+                                         cursor="hand2", command=lambda v=value, var=variable: var.set(v))
+                        restyle_toggle(chip, theme, False, bg)
                     chip.pack(side="right", padx=(5, 0))
-                    restyle_toggle(chip, theme, False, bg)
 
         model_row(tr("Codex model"), "codex")
         self.choice(inner, ((tr("Low"), "low"), (tr("Medium"), "medium"), (tr("High"), "high")),
                     lambda: app.prefs["codex"].get("reasoning") or "low", lambda v: app.prefs["codex"].__setitem__("reasoning", v),
                     label=tr("Reasoning (Codex)"))
+        self.choice(inner, ((tr("On"), "priority"), (tr("Off"), "")), lambda: app.prefs["codex"].get("tier") or "",
+                    lambda v: app.prefs["codex"].__setitem__("tier", v), label=tr("Fast mode (Codex)"))
+        tk.Label(inner, text=tr("About 1.5 times quicker, and uses more of your Codex credits."), bg=bg, fg=theme["sec"], font=rg(8),
+                 wraplength=400, justify="left").pack(anchor="w", pady=(4, 0))
         model_row(tr("Claude model"), "claude", ((tr("Default"), ""), ("sonnet", "sonnet"), ("opus", "opus"), ("haiku", "haiku")))
         tk.Label(inner, text=tr("Leave empty for the tool's default model.") + " " +
                  tr("Your dictation text is sent to the selected service to be rewritten."), bg=bg, fg=theme["sec"],
-                 font=(FONT_REGULAR, 8), wraplength=400, justify="left").pack(anchor="w", pady=(8, 0))
+                 font=rg(8), wraplength=400, justify="left").pack(anchor="w", pady=(8, 0))
+
+    def fill_context(self, inner):
+        """Keep the last dictations in memory and send them along with the next one, so the rewrite understands what you refer to."""
+        app, theme = self.app, self.app.theme
+        bg = theme["card"]
+        self.choice(inner, ((tr("On"), "on"), (tr("Off"), "off")), lambda: "on" if app.prefs["keep_context"] else "off",
+                    lambda v: app.prefs.__setitem__("keep_context", v == "on"), label=tr("Remember recent dictations"))
+        row = tk.Frame(inner, bg=bg)
+        row.pack(fill="x", pady=(4, 0))
+        tk.Label(row, text=tr("The last 5 dictations of the past 30 minutes are sent with the next one, so the rewrite understands what "
+                              "you refer to. Kept in memory only."), bg=bg, fg=theme["sec"], font=rg(8), wraplength=290,
+                 justify="left").pack(side="left")
+        button(row, theme, tr("Forget now"), app.recent.clear).pack(side="right")
 
     def fill_style(self, inner):
         app, theme = self.app, self.app.theme
@@ -1944,10 +2863,8 @@ class SettingsWindow:
         chips.pack(fill="x", pady=(10, 0))
         buttons = {}
         entries = [(item[0], tr(item[1])) for item in styles.STYLES] + [(styles.CUSTOM, tr("Custom"))]
-        description = tk.Label(inner, bg=bg, fg=theme["sec"], font=(FONT_REGULAR, 9), anchor="w", justify="left", wraplength=400)
-        box = tk.Text(inner, width=50, height=9, wrap="word", relief="flat", bg=theme["panel"], fg=theme["text"],
-                      insertbackground=theme["text"], highlightthickness=1, highlightbackground=theme["border"],
-                      highlightcolor=theme["accent"], font=(FONT_REGULAR, 10), padx=8, pady=6, undo=True)
+        description = tk.Label(inner, bg=bg, fg=theme["sec"], font=rg(9), anchor="w", justify="left", wraplength=400)
+        box = tk.Text(inner, width=50, height=9, wrap="word", font=rg(10), padx=8, pady=6, undo=True, **field_style(theme))
         loading = {"busy": False}
 
         def load(text: str):
@@ -1967,9 +2884,8 @@ class SettingsWindow:
             self.refresh_advanced()
 
         for index, (style_id, caption) in enumerate(entries):
-            chip = tk.Button(chips, text=caption, relief="flat", bd=0, highlightthickness=1, font=(FONT_SEMIBOLD, 9), padx=8, pady=5,
-                             cursor="hand2", command=lambda sid=style_id: pick(sid))
-            chip.grid(row=index // 3, column=index % 3, padx=(0, 6), pady=(0, 6), sticky="ew")
+            chip = make_toggle(chips, theme, caption, lambda sid=style_id: pick(sid), sb(9), 8, 5, bg)
+            chip.grid(row=index // 3, column=index % 3, padx=(0, 6), pady=(0, 6), sticky="w" if theme["titlebar"] else "ew")
             buttons[style_id] = chip
         for column in range(3):
             chips.grid_columnconfigure(column, uniform="chip", weight=1)
@@ -2001,13 +2917,13 @@ class SettingsWindow:
         current = app.prefs["rewrite_style"]
         load(app.prefs["rewrite_prompt"] if current == styles.CUSTOM else styles.instruction(current))
         tk.Label(inner, text=tr("This instruction is sent to the model with your dictation. Edit it freely: the style switches to Custom."),
-                 bg=bg, fg=theme["sec"], font=(FONT_REGULAR, 8), wraplength=400, justify="left").pack(anchor="w", pady=(6, 0))
+                 bg=bg, fg=theme["sec"], font=rg(8), wraplength=400, justify="left").pack(anchor="w", pady=(6, 0))
 
     def section(self, parent, title: str, fill, width: int = 470) -> tk.Canvas:
         theme = self.app.theme
 
         def build(inner):
-            tk.Label(inner, text=title, bg=theme["card"], fg=theme["text"], font=(FONT_SEMIBOLD, 11)).pack(anchor="w")
+            tk.Label(inner, text=title, bg=theme["card"], fg=theme["text"], font=sb(11)).pack(anchor="w")
             fill(inner)
         return card(parent, theme, width, build, pad=16, outer=theme["desk"])
 
@@ -2030,7 +2946,7 @@ class SettingsWindow:
         canvas = self.preview_canvas
         canvas.delete("all")
         width, height = 300, 340
-        backdrop = photo(rounded_box(width, height, theme["panel"], theme["border"], 16, outer=theme["desk"]))
+        backdrop = photo(rounded_box(width, height, theme["panel"], theme["frame"], theme["radius"], outer=theme["desk"]))
         canvas.create_image(0, 0, anchor="nw", image=backdrop)
         sprite_image = app.load_mascot().idle.frames[0]
         if sprite_image.height > 150:          # illustrative only: keep the two round buttons on screen
@@ -2040,8 +2956,12 @@ class SettingsWindow:
         mid = height // 2
         shift = -24 if app.prefs["side"] == "right" else 24
         canvas.create_image(width // 2 + shift, mid, image=sprite)
-        gauge = photo(circle_button(BUTTON, theme["panel"], theme["border"], icon("gauge", theme["accent"], 22)))
-        mic = photo(circle_button(BUTTON, theme["panel"], theme["ok"], icon("mic", theme["ok"], 22), border_width=1.5))
+        if theme["tools"]:
+            gauge = photo(tool_button(BUTTON, icon("gauge", theme["accent"], 22)))
+            mic = photo(tool_button(BUTTON, icon("mic", theme["ok"], 22)))
+        else:
+            gauge = photo(circle_button(BUTTON, theme["panel"], theme["border"], icon("gauge", theme["accent"], 22)))
+            mic = photo(circle_button(BUTTON, theme["panel"], theme["ok"], icon("mic", theme["ok"], 22), border_width=1.5))
         top_y = max(34, mid - sprite_image.height // 2 - 34)
         bottom_y = min(height - 34, mid + sprite_image.height // 2 + 34)
         canvas.create_image(width // 2 + shift, top_y, image=gauge)
@@ -2052,7 +2972,7 @@ class SettingsWindow:
         rail = photo(rail_img)
         rail_x = width - 16 - rail_img.width // 2 if app.prefs["side"] == "right" else 16 + rail_img.width // 2
         canvas.create_image(rail_x, mid, image=rail)
-        canvas.create_text(16, height - 14, anchor="w", text=tr("Current size: {size} px").format(size=app.prefs['size']), fill=theme["sec"], font=(FONT_REGULAR, 8))
+        canvas.create_text(16, height - 14, anchor="w", text=tr("Current size: {size} px").format(size=app.prefs['size']), fill=theme["sec"], font=rg(8))
         self.preview_images = [backdrop, sprite, gauge, mic, rail]
 
     # ------------------------------------------------------------------ sections
@@ -2066,8 +2986,8 @@ class SettingsWindow:
             ph = photo(image)
             self.images.append(ph)
             tk.Label(inner, image=ph, bg=theme["panel"], cursor="hand2").pack(pady=(8, 2))
-        tk.Label(inner, text=title, bg=theme["panel"], fg=theme["text"], font=(FONT_SEMIBOLD, 9), wraplength=90, cursor="hand2").pack()
-        tk.Label(inner, text=subtitle, bg=theme["panel"], fg=theme["sec"], font=(FONT_REGULAR, 8), cursor="hand2").pack(pady=(0, 7))
+        tk.Label(inner, text=title, bg=theme["panel"], fg=theme["text"], font=sb(9), wraplength=90, cursor="hand2").pack()
+        tk.Label(inner, text=subtitle, bg=theme["panel"], fg=theme["sec"], font=rg(8), cursor="hand2").pack(pady=(0, 7))
         for widget in (holder, inner, *inner.winfo_children()):
             widget.bind("<Button-1>", lambda event: command())
         if value:
@@ -2081,7 +3001,7 @@ class SettingsWindow:
         holder.pack(fill="x", pady=(10, 0))
         view = tk.Canvas(holder, width=420, height=330, bg=bg, bd=0, highlightthickness=0)
         view.pack(side="left")
-        bar = tk.Canvas(holder, width=6, height=330, bg=bg, bd=0, highlightthickness=0)
+        bar = tk.Canvas(holder, width=17 if theme["titlebar"] else 6, height=330, bg=bg, bd=0, highlightthickness=0)
         bar.pack(side="left", padx=(6, 0))
         self.grid = tk.Frame(view, bg=bg)
         view.create_window(0, 0, window=self.grid, anchor="nw")
@@ -2092,8 +3012,13 @@ class SettingsWindow:
 
         def draw_bar(first, last):
             bar.delete("all")
+            if theme["titlebar"]:        # a Luna scroll bar: light track, blue thumb
+                bar.create_rectangle(0, 0, 16, 329, fill="#f3f1ea", outline="#ebe9dd")
+                if float(last) - float(first) < 0.999:
+                    bar.create_rectangle(1, 330 * float(first) + 1, 15, 330 * float(last) - 1, fill="#c1d2f8", outline="#7ba2e7")
+                return
             if float(last) - float(first) < 0.999:
-                bar.create_line(3, 330 * float(first) + 3, 3, 330 * float(last) - 3, width=4, capstyle="round", fill=theme["track"])
+                bar.create_line(3, 330 * float(first) + 3, 3, 330 * float(last) - 3, width=4, capstyle="round", fill=theme["border"] if theme["blocks"] else theme["track"])
 
         view.configure(yscrollcommand=draw_bar)
 
@@ -2114,12 +3039,13 @@ class SettingsWindow:
         bloub.pack(fill="x", pady=(2, 0))
         text = tk.Frame(bloub, bg=bg)
         text.pack(side="left")
-        tk.Label(text, text="Bloub", bg=bg, fg=theme["text"], font=(FONT_SEMIBOLD, 9)).pack(anchor="w")
+        tk.Label(text, text="Bloub", bg=bg, fg=theme["text"], font=sb(9)).pack(anchor="w")
         tk.Label(text, text=tr("Animated SVG avatar; opens in your browser."), bg=bg, fg=theme["sec"],
-                 font=(FONT_REGULAR, 8), justify="left", wraplength=250).pack(anchor="w")
+                 font=rg(8), justify="left", wraplength=250).pack(anchor="w")
         button(bloub, theme, tr("Open Bloub ↗"), lambda: webbrowser.open(prefs.BLOUB_URL), primary=True).pack(side="right")
+        button(inner, theme, tr("Edit animations and icons…"), self.app.open_mascot_editor).pack(anchor="w", pady=(10, 0))
         tk.Label(inner, text=tr("Image: transparent background recommended. Pack: clippy.js-style folder (agent.js + map.png)."), bg=bg,
-                 fg=theme["sec"], font=(FONT_REGULAR, 8), wraplength=410, justify="left").pack(anchor="w", pady=(8, 0))
+                 fg=theme["sec"], font=rg(8), wraplength=410, justify="left").pack(anchor="w", pady=(8, 0))
 
     def fill_tiles(self):
         theme = self.app.theme
@@ -2202,11 +3128,11 @@ class SettingsWindow:
         for index, entry in enumerate(app.prefs["apps"]):
             row = tk.Frame(inner, bg=bg)
             row.pack(fill="x", pady=(8, 0))
-            tk.Label(row, text=entry["name"][:12], bg=bg, fg=theme["text"], font=(FONT_SEMIBOLD, 9)).pack(side="left")
+            tk.Label(row, text=entry["name"][:12], bg=bg, fg=theme["text"], font=sb(9)).pack(side="left")
             target = entry.get("path") or entry.get("url", "")
             tk.Label(row, text=(target[:20] + "…") if len(target) > 21 else target, bg=bg, fg=theme["sec"],
-                     font=(FONT_REGULAR, 8)).pack(side="left", padx=(8, 0))
-            remove = tk.Label(row, text="✕", bg=bg, fg=theme["sec"], font=(FONT_REGULAR, 10), cursor="hand2", padx=6)
+                     font=rg(8)).pack(side="left", padx=(8, 0))
+            remove = tk.Label(row, text="✕", bg=bg, fg=theme["sec"], font=rg(10), cursor="hand2", padx=6)
             remove.pack(side="right")
             remove.bind("<Enter>", lambda event, w=remove: w.configure(fg=theme["err"]))
             remove.bind("<Leave>", lambda event, w=remove: w.configure(fg=theme["sec"]))
@@ -2228,7 +3154,16 @@ class SettingsWindow:
         def draw(value):
             slider.delete("all")
             x = 10 + (width - 20) * (value - low) / (high - low)
-            slider.create_line(10, 13, width - 10, 13, width=4, capstyle="round", fill=theme["track"])
+            if theme["titlebar"]:        # the Windows XP trackbar: a sunken groove and a pointer-shaped thumb
+                slider.create_rectangle(10, 10, width - 10, 16, fill="#ece9d8", outline="")
+                slider.create_line(10, 10, width - 10, 10, fill="#aca899")
+                slider.create_line(10, 11, width - 10, 11, fill="#716f64")
+                slider.create_line(10, 15, width - 9, 15, fill="#ffffff")
+                slider.create_polygon(x - 5, 3, x + 6, 3, x + 6, 16, x, 23, x - 5, 16, fill="#f5f4ec", outline="#8e8f8f")
+                slider.create_line(x - 4, 4, x + 5, 4, fill="#ffffff")
+                slider.create_line(x - 4, 4, x - 4, 16, fill="#ffffff")
+                return
+            slider.create_line(10, 13, width - 10, 13, width=4, capstyle="round", fill=theme["border"] if theme["blocks"] else theme["track"])
             slider.create_line(10, 13, x, 13, width=4, capstyle="round", fill=theme["accent"])
             slider.create_oval(x - 9, 4, x + 9, 22, fill=theme["accent"], outline=bg, width=2)
 
@@ -2250,9 +3185,8 @@ class SettingsWindow:
         presets = tk.Frame(inner, bg=bg)
         presets.pack(fill="x", pady=(8, 0))
         for label, value in prefs.SIZE_PRESETS:
-            preset = tk.Button(presets, text=f"{tr(label)} · {value}", command=lambda v=value: self.set(size=v), relief="flat", bd=0,
-                               highlightthickness=1, font=(FONT_SEMIBOLD, 9), padx=8, pady=5, cursor="hand2")
-            preset.pack(side="left", expand=True, fill="x", padx=(0, 6))
+            preset = make_toggle(presets, theme, f"{tr(label)} · {value}", lambda v=value: self.set(size=v), sb(9), 8, 5, bg)
+            preset.pack(side="left", expand=True, fill="x" if not theme["titlebar"] else "none", padx=(0, 6))
             self.preset_buttons.append((value, preset))
 
     def refresh_size(self):
@@ -2270,16 +3204,15 @@ class SettingsWindow:
         def segmented(label: str, options, key: str):
             row = tk.Frame(inner, bg=bg)
             row.pack(fill="x", pady=(10, 0))
-            tk.Label(row, text=label, bg=bg, fg=theme["text"], font=(FONT_REGULAR, 10)).pack(side="left")
+            tk.Label(row, text=label, bg=bg, fg=theme["text"], font=rg(10)).pack(side="left")
             for caption, value in reversed(options):
-                widget = tk.Button(row, text=caption, command=lambda v=value: self.set(**{key: v}), relief="flat", bd=0,
-                                   highlightthickness=1, font=(FONT_SEMIBOLD, 9), padx=12, pady=5, cursor="hand2")
-                widget.pack(side="right", padx=(6, 0))
+                widget = make_toggle(row, theme, caption, lambda v=value: self.set(**{key: v}), sb(9), 12, 5, bg)
+                widget.pack(side="right", padx=(6, 0) if not theme["titlebar"] else (10, 0))
                 self.toggles[(key, value)] = widget
 
         segmented(tr("Interface language"), (("Français", "fr"), ("English", "en")), "ui_language")
         segmented(tr("AI shortcuts"), ((tr("Left"), "left"), (tr("Right"), "right")), "side")
-        segmented(tr("Theme"), ((tr("Dark"), "dark"), (tr("Light"), "light")), "theme")
+        segmented(tr("Theme"), ((tr("Dark"), "dark"), (tr("Light"), "light"), ("Windows XP", "xp")), "theme")
 
 
 def add_app_dialog_window(app: RoverApp) -> None:
@@ -2290,10 +3223,9 @@ def add_app_dialog_window(app: RoverApp) -> None:
     body, _ = make_chrome(dialog, app, tr("Add a shortcut"), dialog.destroy)
     form = tk.Frame(body, bg=theme["desk"], padx=22, pady=12)
     form.pack()
-    tk.Label(form, text=tr("Website, local service or program"), bg=theme["desk"], fg=theme["text"], font=(FONT_SEMIBOLD, 10)).grid(row=0, column=0, columnspan=3, sticky="w")
+    tk.Label(form, text=tr("Website, local service or program"), bg=theme["desk"], fg=theme["text"], font=sb(10)).grid(row=0, column=0, columnspan=3, sticky="w")
     url_var, name_var = tk.StringVar(), tk.StringVar()
-    entry_style = dict(relief="flat", bg=theme["card"], fg=theme["text"], insertbackground=theme["text"], highlightthickness=1,
-                       highlightbackground=theme["border"], highlightcolor=theme["accent"])
+    entry_style = field_style(theme)
     entry = tk.Entry(form, textvariable=url_var, width=44, **entry_style)
     entry.grid(row=1, column=0, sticky="ew", pady=(4, 2), ipady=5)
 
@@ -2311,10 +3243,10 @@ def add_app_dialog_window(app: RoverApp) -> None:
     button(form, theme, tr("File…"), browse_file).grid(row=1, column=1, padx=(8, 0), pady=(4, 2))
     button(form, theme, tr("Folder…"), browse_folder).grid(row=1, column=2, padx=(6, 0), pady=(4, 2))
     tk.Label(form, text=tr("E.g. https://chatgpt.com, http://localhost:3000, C:\\Program Files\\App\\app.exe"), bg=theme["desk"], fg=theme["sec"],
-             font=(FONT_REGULAR, 8), wraplength=420, justify="left").grid(row=2, column=0, columnspan=3, sticky="w", pady=(0, 10))
-    tk.Label(form, text=tr("Name (optional)"), bg=theme["desk"], fg=theme["text"], font=(FONT_SEMIBOLD, 10)).grid(row=3, column=0, sticky="w")
+             font=rg(8), wraplength=420, justify="left").grid(row=2, column=0, columnspan=3, sticky="w", pady=(0, 10))
+    tk.Label(form, text=tr("Name (optional)"), bg=theme["desk"], fg=theme["text"], font=sb(10)).grid(row=3, column=0, sticky="w")
     tk.Entry(form, textvariable=name_var, width=44, **entry_style).grid(row=4, column=0, sticky="ew", pady=(4, 12), ipady=5)
-    error = tk.Label(form, text="", bg=theme["desk"], fg=theme["err"], font=(FONT_REGULAR, 9))
+    error = tk.Label(form, text="", bg=theme["desk"], fg=theme["err"], font=rg(9))
     error.grid(row=5, column=0, columnspan=3, sticky="w")
 
     def submit():

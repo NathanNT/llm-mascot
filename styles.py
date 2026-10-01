@@ -4,9 +4,10 @@ from __future__ import annotations
 
 # (id, label, one-line description, instruction). Labels and descriptions go through tr().
 STYLES: list[tuple[str, str, str, str]] = [
-    ("faithful", "Clean-up", "Fix hesitations and punctuation, keep your own words",
-     "Remove hesitations, false starts and repetitions, fix punctuation and obvious recognition mistakes, and group "
-     "related ideas. Keep the speaker's wording, order and every idea."),
+    ("clear", "Correct and clear", "Corrects, clarifies and spells out what you expect",
+     "Turn it into a clear, corrected prompt, ready to send to an AI assistant: fix the syntax and grammar, remove hesitations, "
+     "and rephrase so the request is clear and precise. State the real goal and say explicitly what the answer must contain, "
+     "based on what the speaker said or clearly implies."),
     ("proofread", "Proofread", "Only spelling and grammar, nothing else",
      "Only correct spelling, grammar, conjugation, agreement and punctuation. Do not reword, reorder, shorten, add or "
      "remove anything, and keep hesitation words exactly as spoken."),
@@ -16,13 +17,6 @@ STYLES: list[tuple[str, str, str, str]] = [
     ("detailed", "Detailed", "Spell out what is implied and organise it",
      "Expand it into a fuller, well-organised text: spell out the context and requirements the speaker clearly implies, "
      "use clear paragraphs and precise wording. Never invent facts, names, numbers or requirements."),
-    ("prompt", "AI-ready prompt", "Clear goal first, then context, requirements, output",
-     "Rewrite it as a prompt an AI assistant gets right the first time. Start with the task as one direct imperative "
-     "sentence. Then add only what the speaker actually gave, as short labelled lines: Context (why, for whom), "
-     "Requirements (one per line, concrete and checkable), Constraints (say what to do rather than what to avoid), "
-     "Output (format, length, language). Use plain, direct wording: no greeting, no politeness filler, no repetition. "
-     "If order matters, number the steps; if several unrelated requests were made, number them. Keep names, paths, "
-     "identifiers, numbers and quoted text exactly. Never invent context, requirements or examples."),
     ("coding", "Coding task", "Goal, where, expected behavior, how to verify",
      "Rewrite it as a precise task for a coding agent. First line: the goal as an imperative sentence. Then only the "
      "parts the speaker gave, as short labelled lines: Where (exact files, functions, components or commands), "
@@ -38,8 +32,14 @@ STYLES: list[tuple[str, str, str, str]] = [
      "Rewrite it in a relaxed, friendly conversational tone, keeping the meaning and every detail."),
 ]
 
-DEFAULT_STYLE = "faithful"
+DEFAULT_STYLE = "clear"
+RETIRED = {"faithful": "clear", "prompt": "clear"}      # earlier presets that folded into the main style
 CUSTOM = "custom"
+PROMPT_WRITERS = {"clear"}      # these presets write a prompt (a looser frame: they may spell out what is expected); the others only edit
+
+
+def writes_prompt(style_id: str) -> bool:
+    return style_id in PROMPT_WRITERS
 
 
 def preset(style_id: str) -> tuple[str, str, str, str] | None:

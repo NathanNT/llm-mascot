@@ -6,8 +6,12 @@ import json
 import os
 import re
 import shutil
+import time
 from pathlib import Path
 
+import mascot_setup
+from hotkeys import parse as windows_free_parse
+import styles
 from i18n import system_language
 
 APP_DIR = Path(__file__).resolve().parent
@@ -18,7 +22,7 @@ BLOUB_URL = "https://bloub.vercel.app/"
 MAX_APPS = 8
 SIZE_MIN, SIZE_MAX, SIZE_STEP = 48, 192, 8
 WHISPER_MODELS = (   # (name, download size, character) – the speech model runs on your PC
-    ("tiny", "≈75 MB", "Fastest, basic accuracy"),
+    ("tiny", "≈75 MB", "Very fast, often wrong: not recommended"),
     ("base", "≈145 MB", "Fast, good for clear speech"),
     ("small", "≈480 MB", "Balanced, noticeably better"),
     ("turbo", "≈800 MB", "Near-best accuracy, still quick"),
@@ -45,11 +49,16 @@ DEFAULTS: dict = {
     "whisper_model": "base",
     "insert": "type",       # "type" types at the caret, "copy" only puts the text on the clipboard
     "rewrite_provider": "auto",   # "auto", "codex", "claude" or "off" (insert the raw transcript)
-    "rewrite_style": "faithful",  # a preset id from styles.py, or "custom"
+    "rewrite_style": "clear",     # a preset id from styles.py, or "custom"
     "rewrite_prompt": "",         # your own editing instruction, used when the style is "custom"
+    "animations": {},               # per mascot: the animation chosen for each event (mascot_setup.py)
+    "layout": {},                   # per mascot: where the gauge, microphone and shortcut rail sit
+    "keep_context": False,          # send the last few dictations along with the next one, for the rewrite
+    "live_transcript": True,        # show the words as you speak (GPU only)
+    "hotkey": "ctrl+alt+r",         # start / stop the dictation from anywhere
     "startup": None,              # start with Windows; None = not decided in this session
     "quotas_url": "",       # optional local JSON service; see README
-    "codex": {"home": "", "model": "", "reasoning": "low", "auth_store": ""},
+    "codex": {"home": "", "model": "", "reasoning": "low", "auth_store": "", "tier": ""},     # tier "priority" = Codex Fast mode
     "claude": {"model": ""},
     "transcription": {"engine": "local", "model": "", "base_url": "", "api_key": ""},   # api_key is stored encrypted (DPAPI)
 }
@@ -73,7 +82,7 @@ def load() -> dict:
                 if isinstance(a, dict) and isinstance(a.get("name"), str)
                 and (isinstance(a.get("url"), str) or isinstance(a.get("path"), str))][:MAX_APPS]
         data["apps"] = apps
-    if data["theme"] not in ("dark", "light"):
+    if data["theme"] not in ("dark", "light", "xp"):
         data["theme"] = "dark"
     if data["side"] not in ("left", "right"):
         data["side"] = "right"
@@ -98,6 +107,14 @@ def load() -> dict:
     for key in ("rewrite_style", "rewrite_prompt"):
         if isinstance(stored.get(key), str):
             data[key] = stored[key][:4000]
+    data["rewrite_style"] = styles.RETIRED.get(data["rewrite_style"], data["rewrite_style"])
+    for key in ("keep_context", "live_transcript"):
+        if isinstance(stored.get(key), bool):
+            data[key] = stored[key]
+    if isinstance(stored.get("hotkey"), str) and windows_free_parse(stored["hotkey"]):
+        data["hotkey"] = stored["hotkey"].lower().replace(" ", "")
+    data["animations"] = mascot_setup.sanitize_animations(stored.get("animations"))
+    data["layout"] = mascot_setup.sanitize_layout(stored.get("layout"))
     if isinstance(stored.get("startup"), bool):
         data["startup"] = stored["startup"]
 
@@ -126,7 +143,14 @@ def _finish(data: dict) -> dict:
 def save(data: dict) -> None:
     temporary = SETTINGS_FILE.with_suffix(".tmp")
     temporary.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
-    os.replace(temporary, SETTINGS_FILE)
+    for attempt in range(6):                 # an antivirus or a sync tool can hold the file for a moment
+        try:
+            os.replace(temporary, SETTINGS_FILE)
+            return
+        except PermissionError:
+            if attempt == 5:
+                raise
+            time.sleep(0.1)
 
 
 def codex_pets() -> list[tuple[str, Path]]:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import re
+import os
 from pathlib import Path
 
 import numpy as np
@@ -14,13 +15,25 @@ SS = 4  # supersampling factor
 
 TRANSPARENT = "#010203"  # colour key of the borderless windows
 
+# Shape and type tokens that every theme carries (the XP theme overrides them).
+_MODERN = dict(field=None, field_border=None, radius=16, radius_card=12, radius_rail=None, frame_px=1, titlebar=False, blocks=False, tools=False,
+               font="Segoe UI", font_strong="Segoe UI Semibold", strong_style=())
+
 THEMES = {
     "dark": dict(desk="#111111", panel="#1c1c1e", card="#262628", border="#333336", text="#f2f2f0",
                  sec="#a3a3a8", accent="#f0b04a", on_accent="#1a1200", bar="#f0b04a", track="#3a3a3e",
-                 rec="#ff6a5c", ok="#5ccf98", on_ok="#0d2016", err="#ff7d72", link="#f0b04a", kbd="#2e2e31"),
+                 rec="#ff6a5c", ok="#5ccf98", on_ok="#0d2016", err="#ff7d72", link="#f0b04a", kbd="#2e2e31",
+                 frame="#333336", **{**_MODERN, "field": "#1c1c1e", "field_border": "#333336"}),
     "light": dict(desk="#efe7da", panel="#fffcf6", card="#f6efe3", border="#e4d8c4", text="#2b2620",
                   sec="#675e53", accent="#8f5200", on_accent="#ffffff", bar="#b0620a", track="#e6dac6",
-                  rec="#c4372b", ok="#1f7a4d", on_ok="#ffffff", err="#b3261e", link="#8f5200", kbd="#efe5d3"),
+                  rec="#c4372b", ok="#1f7a4d", on_ok="#ffffff", err="#b3261e", link="#8f5200", kbd="#efe5d3",
+                  frame="#e4d8c4", **{**_MODERN, "field": "#fffcf6", "field_border": "#e4d8c4"}),
+    # Windows XP "Luna": beige windows with a blue frame and title bar, white group boxes, green progress blocks, Tahoma.
+    "xp": dict(desk="#ece9d8", panel="#ece9d8", card="#ffffff", border="#aca899", text="#000000",
+               sec="#3f3f3f", accent="#2b5fb9", on_accent="#ffffff", bar="#30c030", track="#ffffff",
+               rec="#c0190b", ok="#23761a", on_ok="#ffffff", err="#b3261e", link="#0b3bbd", kbd="#f5f4ea",
+               frame="#0054e3", radius=8, radius_card=3, radius_rail=0, frame_px=3, titlebar=True, blocks=True, tools=True,
+               font="Tahoma", font_strong="Tahoma", strong_style=("bold",), field="#ffffff", field_border="#7f9db9"),
 }
 
 CLAUDE_COLOR = "#D97757"
@@ -28,6 +41,30 @@ CLAUDE_COLOR = "#D97757"
 FONT_REGULAR = "Segoe UI"
 FONT_SEMIBOLD = "Segoe UI Semibold"
 FONT_MONO = "Consolas"
+
+_ACTIVE = {"theme": "dark"}
+
+
+def set_active(name: str) -> None:
+    """The theme whose typeface rg() and sb() use (set by the app whenever the theme is read or changed)."""
+    if name in THEMES:
+        _ACTIVE["theme"] = name
+
+
+XP_SIZES = {9: 8, 10: 9}            # Windows XP draws its controls in 8 pt Tahoma; ours are written for Segoe UI
+
+
+def rg(size: int, *style: str) -> tuple:
+    """Regular UI font for the active theme: a Tk font tuple."""
+    theme = THEMES[_ACTIVE["theme"]]
+    return (theme["font"], XP_SIZES.get(size, size) if theme["titlebar"] else size, *style)
+
+
+def sb(size: int, *style: str) -> tuple:
+    """Emphasised UI font (semibold, or bold in XP) for the active theme."""
+    theme = THEMES[_ACTIVE["theme"]]
+    weight = theme["strong_style"] if size >= 10 or not theme["titlebar"] else ()      # XP controls stay regular: bold Tahoma is too wide for them
+    return (theme["font_strong"], XP_SIZES.get(size, size) if theme["titlebar"] else size, *weight, *style)
 
 
 def rgb(color: str, alpha: int = 255) -> tuple[int, int, int, int]:
@@ -273,19 +310,232 @@ def circle_button(diameter: int, fill: str, border: str, glyph: Image.Image | No
     return image.resize((diameter, diameter), Image.Resampling.LANCZOS)
 
 
+_XP_TITLE_STOPS = [(0, "#0058ee"), (4, "#3593ff"), (6, "#288eff"), (8, "#127dff"), (10, "#036ffc"), (14, "#0262ee"), (20, "#0057e5"),
+                   (24, "#0054e3"), (56, "#0055eb"), (66, "#005bf5"), (76, "#026afe"), (86, "#0062ef"), (92, "#0052d6"), (94, "#0040ab"),
+                   (100, "#003092")]
+
+
+def vertical_gradient(width: int, height: int, stops: list[tuple[float, str]]) -> Image.Image:
+    """RGBA image whose colour changes from top to bottom through `stops` ((percent, colour), ...)."""
+    positions = [p for p, _ in stops]
+    colours = np.array([rgb(c)[:3] for _, c in stops], dtype=float)
+    ys = np.linspace(0, 100, max(height, 2))[:height]
+    rows = np.stack([np.interp(ys, positions, colours[:, i]) for i in range(3)], axis=1)
+    data = np.repeat(rows[:, None, :], width, axis=1)
+    alpha = np.full((height, width, 1), 255, dtype=float)
+    return Image.fromarray(np.concatenate([data, alpha], axis=2).astype(np.uint8), "RGBA")
+
+
+def _windows_font(names: tuple[str, ...], px: int):
+    from PIL import ImageFont
+    folder = Path(os.environ.get("WINDIR", "C:/Windows")) / "Fonts"
+    for name in names:
+        try:
+            return ImageFont.truetype(str(folder / name), px)
+        except OSError:
+            continue
+    try:
+        return ImageFont.load_default(px)
+    except TypeError:
+        return ImageFont.load_default()
+
+
+def xp_titlebar(width: int, title: str, height: int = 28, radius: int = 5) -> Image.Image:
+    """Luna title bar (blue gradient, small icon, bold white title with a shadow, red close button) at SS x scale."""
+    w, h = width * SS, height * SS
+    bar = vertical_gradient(w, h, _XP_TITLE_STOPS)
+    mask = Image.new("L", (w, h), 0)
+    ImageDraw.Draw(mask).rounded_rectangle((0, 0, w - 1, h * 2), radius=radius * SS, fill=255)       # only the top corners are round
+    bar.putalpha(mask)
+    draw = ImageDraw.Draw(bar)
+    icon, left = 16 * SS, 8 * SS
+    top = (h - icon) // 2
+    draw.rounded_rectangle((left, top, left + icon, top + icon), radius=3 * SS, fill=rgb("#2f6fe0"), outline=rgb("#ffffff"), width=SS)
+    draw.rounded_rectangle((left + 6 * SS, top + 3 * SS, left + 10 * SS, top + 9 * SS), radius=2 * SS, fill=rgb("#ffffff"))
+    draw.arc((left + 4 * SS, top + 4 * SS, left + 12 * SS, top + 12 * SS), 20, 160, fill=rgb("#ffffff"), width=SS)
+    font = _windows_font(("trebucbd.ttf", "tahomabd.ttf", "arialbd.ttf"), 13 * SS)
+    text_x = left + icon + 6 * SS
+    draw.text((text_x + SS, h // 2 + SS), title, font=font, fill=rgb("#0f1089"), anchor="lm")
+    draw.text((text_x, h // 2), title, font=font, fill=rgb("#ffffff"), anchor="lm")
+    size = 21 * SS
+    bx, by = w - size - 5 * SS, (h - size) // 2
+    button = vertical_gradient(size, size, [(0, "#e9967e"), (55, "#d4512a"), (100, "#c2411c")])
+    button_mask = Image.new("L", (size, size), 0)
+    ImageDraw.Draw(button_mask).rounded_rectangle((0, 0, size - 1, size - 1), radius=3 * SS, fill=255)
+    button.putalpha(button_mask)
+    bar.alpha_composite(button, (bx, by))
+    draw.rounded_rectangle((bx, by, bx + size - 1, by + size - 1), radius=3 * SS, outline=rgb("#ffffff"), width=SS)
+    pad = 6 * SS
+    for a, b in (((bx + pad, by + pad), (bx + size - pad, by + size - pad)), ((bx + size - pad, by + pad), (bx + pad, by + size - pad))):
+        draw.line((a, b), fill=rgb("#ffffff"), width=round(2.4 * SS))
+    return bar
+
+
+def xp_button_image(width: int, height: int, state: str = "normal") -> Image.Image:
+    """XP push button: white-to-beige gradient, dark blue border; states 'normal', 'default' (blue glow), 'hover' (orange), 'pressed'."""
+    w, h = width * SS, height * SS
+    stops = [(0, "#d6d0c0"), (100, "#d6d0c0")] if state == "pressed" else [(0, "#ffffff"), (86, "#ece9d8"), (100, "#d6d0c0")]
+    face = vertical_gradient(w, h, stops)
+    mask = Image.new("L", (w, h), 0)
+    ImageDraw.Draw(mask).rounded_rectangle((0, 0, w - 1, h - 1), radius=3 * SS, fill=255)
+    face.putalpha(mask)
+    draw = ImageDraw.Draw(face)
+    if state in ("default", "hover"):
+        glow = "#98b8f8" if state == "default" else "#fbd18b"
+        draw.rounded_rectangle((SS, SS, w - 1 - SS, h - 1 - SS), radius=2 * SS, outline=rgb(glow), width=2 * SS)
+    draw.rounded_rectangle((0, 0, w - 1, h - 1), radius=3 * SS, outline=rgb("#e68b2c" if state == "hover" else "#003c74"), width=SS)
+    return face.resize((width, height), Image.Resampling.LANCZOS)
+
+
+XP_FACE, XP_LIGHT, XP_SOFT, XP_SHADOW = "#ece9d8", "#ffffff", "#aca899", "#716f64"
+
+
+def bevel(draw: ImageDraw.ImageDraw, box: tuple[int, int, int, int], raised: bool = True) -> None:
+    """The two-pixel 3-D edge of Windows controls, drawn with 1 px lines: white and grey, swapped when sunken."""
+    x0, y0, x1, y1 = box
+    top_left, bottom_right = (XP_LIGHT, XP_SHADOW) if raised else (XP_SHADOW, XP_LIGHT)
+    inner_tl, inner_br = ("#f4f2e8", XP_SOFT) if raised else (XP_SOFT, "#f4f2e8")
+    draw.line((x0, y0, x1 - 1, y0), fill=top_left)
+    draw.line((x0, y0, x0, y1 - 1), fill=top_left)
+    draw.line((x0, y1, x1, y1), fill=bottom_right)
+    draw.line((x1, y0, x1, y1), fill=bottom_right)
+    draw.line((x0 + 1, y0 + 1, x1 - 2, y0 + 1), fill=inner_tl)
+    draw.line((x0 + 1, y0 + 1, x0 + 1, y1 - 2), fill=inner_tl)
+    draw.line((x0 + 1, y1 - 1, x1 - 1, y1 - 1), fill=inner_br)
+    draw.line((x1 - 1, y0 + 1, x1 - 1, y1 - 1), fill=inner_br)
+
+
+def tool_button(size: int, glyph: Image.Image | None, pressed: bool = False) -> Image.Image:
+    """A MS Paint toolbox button: square, raised bevel; pressed = sunken on the checkered fill Paint uses for the chosen tool."""
+    face = Image.new("RGBA", (size, size), rgb(XP_FACE))
+    draw = ImageDraw.Draw(face)
+    if pressed:
+        for y in range(2, size - 2):
+            for x in range(2, size - 2):
+                if (x + y) % 2 == 0:
+                    face.putpixel((x, y), rgb(XP_LIGHT))
+    bevel(draw, (0, 0, size - 1, size - 1), raised=not pressed)
+    big = face.resize((size * SS, size * SS), Image.Resampling.NEAREST)
+    if glyph is not None:
+        box = glyph.getchannel("A").getbbox()
+        gx, gy = ((size * SS - (box[0] + box[2])) // 2, (size * SS - (box[1] + box[3])) // 2) if box else ((size * SS - glyph.width) // 2, (size * SS - glyph.height) // 2)
+        shift = SS if pressed else 0                                   # a pressed button moves its picture one pixel
+        big.alpha_composite(glyph, (gx + shift, gy + shift))
+    return big.resize((size, size), Image.Resampling.BOX)           # box filter keeps the 1 px bevel and checker exactly
+
+
+def toolbox_image(glyphs: list[Image.Image | None]) -> tuple[Image.Image, list[tuple[int, int]]]:
+    """Vertical Paint-style toolbox: a raised panel holding square tool buttons; returns (image, [(y0, y1) per button])."""
+    button, gap, pad = 44, 4, 6
+    count = len(glyphs)
+    width = button + 2 * pad + 2
+    height = count * button + (count - 1) * gap + 2 * pad + 2
+    image = Image.new("RGBA", (width, height), rgb(XP_FACE))
+    bevel(ImageDraw.Draw(image), (0, 0, width - 1, height - 1))
+    ranges = []
+    for index, glyph in enumerate(glyphs):
+        y = 1 + pad + index * (button + gap)
+        image.alpha_composite(tool_button(button, glyph), ((width - button) // 2, y))
+        ranges.append((y, y + button))
+    return image, ranges
+
+
+def toolbar_band(glyph: Image.Image | None, badges: list[Image.Image | None], toward_right: bool, rail_half: int) -> tuple[Image.Image, list[tuple[int, int]]]:
+    """The horizontal toolbar that slides out of a toolbox button: flat where it meets the toolbox, raised edge elsewhere."""
+    button, gap, pad, badge = FLYOUT_DISC, 8, 4, 18
+    count = len(badges)
+    width = button + gap + count * button + (count - 1) * gap + pad + 2
+    height = FLYOUT_HEIGHT
+    start = button // 2
+    band = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(band)
+    draw.rectangle((start, 0, width - 1, height - 1), fill=rgb(XP_FACE))
+    edge = start + rail_half                       # the raised edge only begins where the toolbox ends
+    tl, br, itl, ibr = XP_LIGHT, XP_SHADOW, "#f4f2e8", XP_SOFT
+    draw.line((edge, 0, width - 2, 0), fill=tl)
+    draw.line((edge, 1, width - 3, 1), fill=itl)
+    draw.line((edge, height - 1, width - 1, height - 1), fill=br)
+    draw.line((edge, height - 2, width - 2, height - 2), fill=ibr)
+    draw.line((width - 1, 0, width - 1, height - 1), fill=br)
+    draw.line((width - 2, 1, width - 2, height - 2), fill=ibr)
+    if not toward_right:
+        band = band.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
+
+    def at(x):
+        return x if toward_right else width - x - button
+
+    band.alpha_composite(tool_button(button, glyph), (at(0), pad))
+    ranges = []
+    for index, picture in enumerate(badges):
+        x = at(button + gap + index * (button + gap))
+        band.alpha_composite(tool_button(button, glyph), (x, pad))
+        if picture is not None:
+            corner = Image.new("RGBA", (badge, badge), rgb(XP_LIGHT))
+            ImageDraw.Draw(corner).rectangle((0, 0, badge - 1, badge - 1), outline=rgb(XP_SHADOW))
+            corner.alpha_composite(picture.resize((badge - 6, badge - 6), Image.Resampling.LANCZOS), (3, 3))
+            band.alpha_composite(corner, (x + button - badge + 3, pad + button - badge + 3))
+        ranges.append((x, x + button))
+    return band, ranges
+
+
+def xp_radio_image(selected: bool, size: int = 13) -> Image.Image:
+    """A Luna radio button: white face, dark blue rim, and a green dot when chosen."""
+    px = size * SS
+    image = Image.new("RGBA", (px, px), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    draw.ellipse((0, 0, px - 1, px - 1), fill=rgb("#1c5180"))
+    face = vertical_gradient(px - 2 * SS, px - 2 * SS, [(0, "#dcdcd7"), (100, "#ffffff")])
+    mask = Image.new("L", face.size, 0)
+    ImageDraw.Draw(mask).ellipse((0, 0, face.width - 1, face.height - 1), fill=255)
+    face.putalpha(mask)
+    image.alpha_composite(face, (SS, SS))
+    if selected:
+        dot = orb_image(5, "#9af09a", "#1f9d1f")
+        image.alpha_composite(dot.resize((5 * SS, 5 * SS), Image.Resampling.LANCZOS), ((px - 5 * SS) // 2, (px - 5 * SS) // 2))
+    return image.resize((size, size), Image.Resampling.LANCZOS)
+
+
+def orb_image(diameter: int, light: str, dark: str, glyph: Image.Image | None = None) -> Image.Image:
+    """Glossy round button (the big blue or red XP orb): radial light-to-dark shading plus a soft highlight on the upper half."""
+    size = diameter * SS
+    yy, xx = np.mgrid[0:size, 0:size]
+    distance = np.clip(np.hypot(xx - size * 0.36, yy - size * 0.30) / (size * 0.85), 0, 1)[..., None]
+    shade = np.array(rgb(light)[:3], dtype=float) * (1 - distance) + np.array(rgb(dark)[:3], dtype=float) * distance
+    orb = Image.fromarray(np.concatenate([shade, np.full((size, size, 1), 255.0)], axis=2).astype(np.uint8), "RGBA")
+    gloss = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    ImageDraw.Draw(gloss).ellipse((size * 0.14, size * 0.05, size * 0.86, size * 0.50), fill=(255, 255, 255, 85))
+    orb.alpha_composite(gloss)
+    circle = Image.new("L", (size, size), 0)
+    ImageDraw.Draw(circle).ellipse((0, 0, size - 1, size - 1), fill=255)
+    orb.putalpha(circle)
+    rim = ImageDraw.Draw(orb)
+    darker = tuple(round(c * 0.6) for c in rgb(dark)[:3])
+    rim.ellipse((0, 0, size - 1, size - 1), outline=darker, width=round(1.5 * SS))
+    if glyph is not None:
+        box = glyph.getchannel("A").getbbox()
+        gx, gy = ((size - (box[0] + box[2])) // 2, (size - (box[1] + box[3])) // 2) if box else ((size - glyph.width) // 2, (size - glyph.height) // 2)
+        orb.alpha_composite(glyph, (gx, gy))
+    return orb.resize((diameter, diameter), Image.Resampling.LANCZOS)
+
+
 def panel_image(width: int, height: int, fill: str, border: str, radius: int = 16,
-                tail: str | None = None, tail_x: int | None = None, tail_size: int = 7) -> tuple[Image.Image, int]:
-    """Rounded panel with an optional 'up' or 'down' tail; returns (image, body_top_offset)."""
+                tail: str | None = None, tail_x: int | None = None, tail_size: int = 7,
+                frame: int = 1, square_bottom: bool = False, titlebar: Image.Image | None = None) -> tuple[Image.Image, int]:
+    """Rounded panel with an optional 'up' or 'down' tail; returns (image, body_top_offset).
+    `frame` is the border width in px; `titlebar` (from xp_titlebar, frame-wide) is drawn inside the frame at the top."""
     top = tail_size if tail == "up" else 0
     total_h = height + (tail_size if tail else 0)
     w, h = width * SS, total_h * SS
     image = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
     body = (0, top * SS, w - 1, (top + height) * SS - 1)
-    draw.rounded_rectangle(body, radius=radius * SS, fill=rgb(border))
-    inset = SS
+    corners = (True, True, not square_bottom, not square_bottom)
+    draw.rounded_rectangle(body, radius=radius * SS, fill=rgb(border), corners=corners)
+    inset = frame * SS
     draw.rounded_rectangle((body[0] + inset, body[1] + inset, body[2] - inset, body[3] - inset),
-                           radius=max(1, (radius - 1) * SS), fill=rgb(fill))
+                           radius=max(1, (radius - frame) * SS), fill=rgb(fill), corners=corners)
+    if titlebar is not None:
+        image.alpha_composite(titlebar, (inset, body[1] + inset))
     if tail:
         cx = (tail_x if tail_x is not None else width // 2) * SS
         cx = max((radius + tail_size) * SS, min(w - (radius + tail_size) * SS, cx))
@@ -320,6 +570,8 @@ def rounded_box(width: int, height: int, fill: str, border: str, radius: int = 1
 
 def rail_image(theme: dict, glyphs: list[Image.Image | None], letters: list[str]) -> tuple[Image.Image, list[tuple[int, int]]]:
     """Vertical pill of 44 px round shortcut buttons; returns (image, [(y0, y1) per button])."""
+    if theme.get("tools"):
+        return toolbox_image(glyphs)
     button, gap, pad = 44, 8, 6
     count = len(glyphs)
     width = button + 2 * pad + 2
@@ -327,8 +579,9 @@ def rail_image(theme: dict, glyphs: list[Image.Image | None], letters: list[str]
     w, h = width * SS, height * SS
     image = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
-    draw.rounded_rectangle((0, 0, w - 1, h - 1), radius=(width // 2) * SS, fill=rgb(theme["border"]))
-    draw.rounded_rectangle((SS, SS, w - 1 - SS, h - 1 - SS), radius=(width // 2 - 1) * SS, fill=rgb(theme["panel"]))
+    radius = theme.get("radius_rail") or width // 2
+    draw.rounded_rectangle((0, 0, w - 1, h - 1), radius=radius * SS, fill=rgb(theme["frame"] if theme.get("titlebar") else theme["border"]))
+    draw.rounded_rectangle((SS, SS, w - 1 - SS, h - 1 - SS), radius=(radius - 1) * SS, fill=rgb(theme["panel"]))
     pill = image.resize((width, height), Image.Resampling.LANCZOS)
     ranges = []
     for index, glyph in enumerate(glyphs):
@@ -339,6 +592,59 @@ def rail_image(theme: dict, glyphs: list[Image.Image | None], letters: list[str]
         pill.alpha_composite(circle, ((width - button) // 2, y))
         ranges.append((y, y + button))
     return pill, ranges
+
+
+FLYOUT_DISC = 44
+FLYOUT_HEIGHT = FLYOUT_DISC + 8
+
+
+def flyout_image(theme: dict, glyph: Image.Image | None, badges: list[Image.Image | None],
+                 toward_right: bool = True, rail_half: int = 29) -> tuple[Image.Image, list[tuple[int, int]]]:
+    """A band that grows out of a rail button. Its first disc is that very button, redrawn at the same place so the two
+    merge; the band itself starts at the disc's centre and is a little lower than the rail, with a rounded far end.
+    Each further button is the product logo with a small disc (bottom right) showing where it will open.
+    Its border lines only begin where the rail ends (`rail_half` from the disc centre)."""
+    if theme.get("tools"):
+        return toolbar_band(glyph, badges, toward_right, rail_half)
+    button, gap, badge, pad = FLYOUT_DISC, 8, 20, 4
+    count = len(badges)
+    height = FLYOUT_HEIGHT
+    width = button + gap + count * button + (count - 1) * gap + pad + 2
+    start = button // 2
+    w, h = width * SS, height * SS
+    line = theme["frame"] if theme.get("titlebar") else theme["border"]          # the band wears the rail's outline
+    radius, edge = (height // 2) * SS, (start + height // 2) * SS
+    over_rail = (start * SS, 0, (start + rail_half) * SS - 1, h - 1)
+    outer, inner = Image.new("L", (w, h), 0), Image.new("L", (w, h), 0)
+    od, idr = ImageDraw.Draw(outer), ImageDraw.Draw(inner)
+    od.rounded_rectangle((start * SS, 0, w - 1, h - 1), radius=radius, fill=255)
+    od.rectangle((start * SS, 0, edge, h - 1), fill=255)                                # the end next to the rail is square,
+    idr.rounded_rectangle(((start + 1) * SS, SS, w - 1 - SS, h - 1 - SS), radius=radius - SS, fill=255)
+    idr.rectangle((start * SS, SS, edge, h - 1 - SS), fill=255)                        # with no border line across it
+    od.rectangle(over_rail, fill=255)
+    idr.rectangle(over_rail, fill=255)                                                  # and none over the rail itself
+    layer = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    layer.paste(Image.new("RGBA", (w, h), rgb(line)), mask=outer)
+    fill = Image.new("RGBA", (w, h), rgb(theme["panel"]))
+    layer.paste(fill, mask=inner)
+    band = layer.resize((width, height), Image.Resampling.LANCZOS)
+    if not toward_right:
+        band = band.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
+
+    def at(x):
+        return x if toward_right else width - x - button
+
+    band.alpha_composite(circle_button(button, theme["card"], theme["border"], glyph), (at(0), pad))
+    ranges = []
+    for index, picture in enumerate(badges):
+        x = at(button + gap + index * (button + gap))
+        band.alpha_composite(circle_button(button, theme["card"], theme["border"], glyph), (x, pad))
+        if picture is not None:
+            disc = circle_button(badge, theme["panel"], theme["border"], None)
+            disc.alpha_composite(picture.resize((badge - 6, badge - 6), Image.Resampling.LANCZOS), (3, 3))
+            band.alpha_composite(disc, (x + button - badge + 3, pad + button - badge + 3))
+        ranges.append((x, x + button))
+    return band, ranges
 
 
 def harden_edges(image: Image.Image, edge_color: str, threshold: int = 96) -> Image.Image:

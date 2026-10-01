@@ -7,6 +7,8 @@ import os
 import time
 from ctypes import wintypes
 
+import hotkeys
+
 user32 = ctypes.windll.user32
 MOD_ALT = 0x0001
 MOD_CONTROL = 0x0002
@@ -118,8 +120,19 @@ def is_own_window(hwnd: int) -> bool:
     return pid.value == os.getpid()
 
 
-def register_hotkey(hotkey_id: int = 1) -> bool:
-    return bool(user32.RegisterHotKey(None, hotkey_id, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, ord("R")))
+def register_hotkey(spec: str = hotkeys.DEFAULT, hotkey_id: int = 1) -> bool:
+    """Claim the shortcut system-wide; False when it is unusable or another program already owns it."""
+    parsed = hotkeys.parse(spec)
+    return bool(parsed and user32.RegisterHotKey(None, hotkey_id, parsed[0] | MOD_NOREPEAT, parsed[1]))
+
+
+def pressed_modifiers() -> set[str]:
+    """Which of Ctrl, Alt, Shift and Win are held down right now."""
+    held = set()
+    for name, codes in (("ctrl", (0x11,)), ("alt", (0x12,)), ("shift", (0x10,)), ("win", (0x5B, 0x5C))):
+        if any(user32.GetAsyncKeyState(code) & 0x8000 for code in codes):
+            held.add(name)
+    return held
 
 
 def unregister_hotkey(hotkey_id: int = 1) -> None:
@@ -194,3 +207,21 @@ def insert_text(hwnd: int, value: str) -> bool:
         if events and not _send(events):
             return False
     return True
+
+
+_gdi32 = ctypes.WinDLL("gdi32")
+_user32 = ctypes.WinDLL("user32")
+
+
+def round_top_corners(window, radius: int = 8) -> None:
+    """Clip a borderless window to rounded top corners and square bottom ones, as Windows XP did (hard edge, no smoothing)."""
+    window.update_idletasks()
+    _user32.GetAncestor.argtypes = (wintypes.HWND, wintypes.UINT)
+    _user32.GetAncestor.restype = wintypes.HWND
+    _user32.SetWindowRgn.argtypes = (wintypes.HWND, ctypes.c_void_p, wintypes.BOOL)
+    _gdi32.CreateRoundRectRgn.argtypes = (ctypes.c_int,) * 6
+    _gdi32.CreateRoundRectRgn.restype = ctypes.c_void_p
+    hwnd = _user32.GetAncestor(window.winfo_id(), 2) or window.winfo_id()
+    width, height = window.winfo_width(), window.winfo_height()
+    region = _gdi32.CreateRoundRectRgn(0, 0, width + 1, height + 2 * radius + 1, 2 * radius, 2 * radius)   # taller than the window: the bottom stays square
+    _user32.SetWindowRgn(hwnd, region, True)                                                                 # the system owns the region now

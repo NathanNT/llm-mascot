@@ -53,6 +53,7 @@ class MascotSet:
     clips: dict[str, Clip]
     events: dict[str, list[str]]
     variants: list[str] = field(default_factory=list)   # occasional idle animations (packs)
+    overrides: dict[str, str] = field(default_factory=dict)   # event -> animation chosen in the mascot editor
     size: tuple[int, int] = (1, 1)
     idle_box: tuple[int, int, int, int] = (0, 0, 1, 1)  # where the resting mascot sits inside `size`
 
@@ -61,6 +62,13 @@ class MascotSet:
         return self.clips["idle"]
 
     def find(self, event: str) -> str | None:
+        chosen = self.overrides.get(event)
+        if chosen in self.clips and self.clips[chosen].frames:
+            return chosen
+        return self.automatic(event)
+
+    def automatic(self, event: str) -> str | None:
+        """The animation used for `event` when nothing was chosen by hand."""
         for name in self.events.get(event, []):
             if name in self.clips and self.clips[name].frames:
                 return name

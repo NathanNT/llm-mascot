@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Callable
 
@@ -13,15 +14,9 @@ from faster_whisper import WhisperModel
 
 import transcribe
 from i18n import tr
+from modelstore import MODEL_DIR, model_downloaded      # noqa: F401  (re-exported for the benchmark)
 
-MODEL_DIR = Path(__file__).resolve().parent / "models"
 MAX_SECONDS = 75
-HF_NAMES = {"turbo": "large-v3-turbo"}      # the name faster-whisper uses on Hugging Face
-
-
-def model_downloaded(name: str) -> bool:
-    """True when this Whisper model is already on disk (so it loads instantly and needs no internet)."""
-    return any(MODEL_DIR.glob(f"models--*--faster-whisper-{HF_NAMES.get(name, name)}"))
 
 
 def local_transcribe(model: WhisperModel, audio: np.ndarray, language: str) -> str:
@@ -36,12 +31,15 @@ class Recorder:
 
     def __init__(self, on_status: Callable[[str], None], on_result: Callable[[str, str], None],
                  on_error: Callable[[str], None], model_name: str = "base",
-                 get_config: Callable[[], dict] | None = None):
+                 get_config: Callable[[], dict] | None = None, on_partial: Callable[[str], None] | None = None,
+                 get_live: Callable[[], bool] | None = None):
         self.on_status = on_status
         self.on_result = on_result
         self.on_error = on_error
         self.model_name = model_name
         self.get_config = get_config or (lambda: {})
+        self.on_partial = on_partial                         # receives the words recognised so far, while you are still talking
+        self.get_live = get_live or (lambda: False)
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._model: WhisperModel | None = None
@@ -66,6 +64,7 @@ class Recorder:
                 try:
                     if accel.ready(self.model_name):
                         accel.server.ensure(self.model_name)
+                        accel.server.transcribe(np.zeros(8000, dtype=np.float32), "en", self.model_name)   # compiles the GPU kernels now, not on your first sentence
                 except accel.AccelError:
                     pass                                   # the first dictation reports it, or falls back to the CPU
 
@@ -102,8 +101,34 @@ class Recorder:
     def _local(self, audio: np.ndarray, language: str) -> str:
         return local_transcribe(self._load_model(), audio, language)
 
+    def _piece(self, audio: np.ndarray, language: str, config: dict, fallback: bool | None = None) -> str:
+        if len(audio) < 4000 or float(np.max(np.abs(audio))) < 0.003:
+            return ""
+        return transcribe.run(audio, language, config, self._local,
+                              fallback=model_downloaded(self.model_name) if fallback is None else fallback)
+
+    def _preview(self, tail: np.ndarray, language: str, config: dict, finished: list[str], state: dict) -> None:
+        """Recognise the words spoken since the last finished piece, only to show them: a slow CPU model never takes over for this."""
+        try:
+            text = self._piece(tail, language, config, fallback=False)
+            if text and not state["stopped"] and self.on_partial:
+                self.on_partial(" ".join([*finished, text]).strip())
+        except Exception:
+            pass                                             # a failed preview is simply not shown
+        finally:
+            state["busy"] = False
+
     def _run(self, language: str) -> None:
         chunks: list[np.ndarray] = []
+        config = {**self.get_config(), "whisper_model": self.model_name}
+        streaming = transcribe.is_gpu(config)           # only the GPU is fast enough to work while you talk
+        pieces: list | None = [] if streaming else None
+        pool = ThreadPoolExecutor(max_workers=1) if streaming else None
+        live = bool(streaming and self.on_partial and self.get_live())
+        preview_pool = ThreadPoolExecutor(max_workers=1) if live else None
+        preview = {"busy": False, "stopped": False}
+        last_preview = 0.0
+        consumed = 0
 
         def callback(indata, frames, time_info, status):
             chunks.append(indata[:, 0].copy())
@@ -119,8 +144,23 @@ class Recorder:
             with stream:
                 started = time.monotonic()
                 while not self._stop.wait(0.1) and time.monotonic() - started < MAX_SECONDS:
-                    pass
+                    if pieces is not None:
+                        pending = np.concatenate(list(chunks)) if chunks else np.zeros(0, dtype=np.float32)
+                        cut = transcribe.find_pause(pending[consumed:])
+                        if not cut and len(pending) - consumed > (transcribe.PIECE_LIMIT_SECONDS - 1) * 16000:
+                            cut = transcribe.quietest_cut(pending[consumed:])       # no pause yet and the window is almost full
+                        if cut:          # everything before the pause is transcribed now, while you keep talking
+                            pieces.append(pool.submit(self._piece, pending[consumed:consumed + cut], language, config))
+                            consumed += cut
+                        now = time.monotonic()
+                        if live and not preview["busy"] and now - last_preview > 1.0:
+                            tail = pending[consumed:]
+                            if len(tail) > 12000 and float(np.max(np.abs(tail[-16000:]))) > 0.01:          # voice in the last second
+                                preview["busy"], last_preview = True, now
+                                finished = [f.result() for f in pieces if f.done() and not f.cancelled() and f.exception() is None]
+                                preview_pool.submit(self._preview, tail, language, config, [t for t in finished if t], preview)
 
+            preview["stopped"] = True
             if not chunks:
                 raise RuntimeError(tr("No sound received from the microphone"))
             audio = np.concatenate(chunks)
@@ -129,9 +169,24 @@ class Recorder:
 
             self.on_status("transcribing")
             config = {**self.get_config(), "whisper_model": self.model_name}
-            text = transcribe.run(audio, language, config, self._local, fallback=model_downloaded(self.model_name))
+            text = ""
+            if pieces is not None:
+                try:
+                    tail = audio[consumed:]
+                    pieces.append(pool.submit(self._piece, tail, language, config))
+                    text = " ".join(t for t in (f.result() for f in pieces) if t).strip()
+                except Exception:
+                    text = ""                          # any trouble with the pieces: start over on the whole recording
+            if not text:
+                text = transcribe.run(audio, language, config, self._local, fallback=model_downloaded(self.model_name))
             if not text:
                 raise RuntimeError(tr("No speech recognised"))
             self.on_result(text, language)
         except Exception as exc:
             self.on_error(str(exc))
+        finally:
+            preview["stopped"] = True
+            if pool:
+                pool.shutdown(wait=False)
+            if preview_pool:
+                preview_pool.shutdown(wait=False)

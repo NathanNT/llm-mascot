@@ -18,3 +18,5 @@ assets/rover.png
 dist/
 *.egg-info/
 assets/rover.ico
+
+/runtime/

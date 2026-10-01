@@ -171,21 +171,22 @@ try:
     pump(0.8)
     grab(window_rect(app.settings_window.top)).save(out / "settings.png")
     app.settings_window.toggle_page()
-    app.settings_window.top.update()
+    advanced_page = app.settings_window.peer
+    advanced_page.top.update()
     pump(0.6)
-    grab(window_rect(app.settings_window.top)).save(out / "advanced.png")
+    grab(window_rect(advanced_page.top)).save(out / "advanced.png")
     app.prefs["transcription"]["engine"] = "openai"
-    app.settings_window.build()
-    app.settings_window.top.update()
+    advanced_page.build()
+    advanced_page.top.update()
     pump(0.6)
-    grab(window_rect(app.settings_window.top)).save(out / "advanced-service.png")
+    grab(window_rect(advanced_page.top)).save(out / "advanced-service.png")
     app.prefs["transcription"]["engine"] = "gpu"
-    app.settings_window.build()
-    app.settings_window.top.update()
+    advanced_page.build()
+    advanced_page.top.update()
     pump(0.8)
-    grab(window_rect(app.settings_window.top)).save(out / "advanced-gpu.png")
+    grab(window_rect(advanced_page.top)).save(out / "advanced-gpu.png")
     app.prefs["transcription"]["engine"] = "local"
-    app.settings_window.close()
+    advanced_page.close()
     pump(0.3)
 
     # ---- the classic characters at work (processing animation)

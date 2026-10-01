@@ -178,3 +178,84 @@ def test_gpu_failures_fall_back_to_the_cpu_model(monkeypatch):
         transcribe.run(silence, "en", {"engine": "gpu", "whisper_model": "base"}, local, fallback=False)
     monkeypatch.setattr(accel, "transcribe_gpu", lambda audio, language, model: f"gpu text ({model})")
     assert transcribe.run(silence, "fr", {"engine": "gpu", "whisper_model": "small"}, local, fallback=True) == "gpu text (small)"
+
+
+def test_repetition_loops_are_detected_but_normal_speech_is_not():
+    speech = "Ajoute une route POST sur slash api slash v2 dans le contrôleur Express, valide le payload avec Zod puis pousse l'événement dans la file Redis"
+    assert not accel.looks_degenerate(speech, 12.0)
+    assert accel.looks_degenerate("tu ne routes " * 60, 12.0)                          # a phrase repeated over and over
+    assert accel.looks_degenerate(" ".join(f"mot{i}" for i in range(200)), 10.0)       # impossibly many words for the duration
+    assert not accel.looks_degenerate("Bonjour.", 1.0)
+
+
+def test_a_looping_gpu_answer_falls_back_to_the_cpu_model(monkeypatch):
+    monkeypatch.setattr(accel.server, "transcribe", lambda audio, language, model: "la la la " * 80)
+    silence = np.zeros(16000, dtype=np.float32)
+    with pytest.raises(accel.AccelError):
+        accel.transcribe_gpu(silence, "fr", "tiny")
+    assert transcribe.run(silence, "fr", {"engine": "gpu", "whisper_model": "tiny"}, lambda a, l: "cpu answer", fallback=True) == "cpu answer"
+
+
+def test_find_pause_cuts_inside_a_quiet_gap_after_enough_speech():
+    rng = np.random.default_rng(1)
+    speech = lambda s: (rng.standard_normal(int(16000 * s)) * 0.1).astype(np.float32)
+    gap = np.zeros(int(16000 * 0.6), dtype=np.float32)
+    audio = np.concatenate([speech(6), gap, speech(2)])
+    cut = transcribe.find_pause(audio)
+    assert cut and 6 * 16000 <= cut <= 6.6 * 16000
+    assert transcribe.find_pause(np.concatenate([speech(2), gap, speech(2)])) is None      # too early: nothing worth sending yet
+    assert transcribe.find_pause(speech(9)) is None                                          # no pause at all
+
+
+def test_long_recordings_are_split_into_pieces_that_fit_the_gpu_window():
+    audio = (np.random.default_rng(2).standard_normal(16000 * 40) * 0.1).astype(np.float32)
+    audio[16000 * 12: 16000 * 12 + 4000] = 0                                   # one quiet moment near the limit
+    pieces = transcribe.split_audio(audio)
+    assert all(len(p) <= 13 * 16000 for p in pieces) and sum(len(p) for p in pieces) == len(audio)
+    assert abs(len(pieces[0]) - 12.1 * 16000) < 0.3 * 16000                    # cut in the quiet gap, not mid-word
+    assert len(transcribe.split_audio(audio[:16000 * 5])) == 1
+
+
+
+# ---------------------------------------------------------------------------------------------- CPU model store
+
+def test_a_half_downloaded_cpu_model_does_not_count(tmp_path):
+    import modelstore
+    folder = modelstore.cache_folder("small", tmp_path)
+    (folder / "blobs").mkdir(parents=True)
+    (folder / "blobs" / "abc.incomplete").write_bytes(b"x" * 10)
+    assert not modelstore.model_downloaded("small", tmp_path)
+    (folder / "snapshots" / "rev1").mkdir(parents=True)
+    (folder / "snapshots" / "rev1" / "model.bin").write_bytes(b"model")
+    assert modelstore.model_downloaded("small", tmp_path)
+    assert not modelstore.model_downloaded("not-a-model", tmp_path)
+
+
+def test_the_turbo_model_maps_to_its_own_repository(tmp_path):
+    import modelstore
+    assert modelstore.repo_for("turbo").endswith("faster-whisper-large-v3-turbo")
+    assert modelstore.repo_for("base") == "Systran/faster-whisper-base"
+
+
+def test_downloading_a_cpu_model_reports_progress_and_checks_the_result(tmp_path, monkeypatch):
+    import modelstore
+    monkeypatch.setattr(modelstore, "expected_bytes", lambda name: 1000)
+    seen = []
+
+    def fake_snapshot(repo, allow_patterns, cache_dir, tqdm_class):
+        folder = modelstore.cache_folder("base", tmp_path)
+        (folder / "blobs").mkdir(parents=True)
+        (folder / "blobs" / "b").write_bytes(b"x" * 400)
+        import time
+        time.sleep(0.4)                                    # long enough for the progress watcher to see it
+        (folder / "snapshots" / "r").mkdir(parents=True)
+        (folder / "snapshots" / "r" / "model.bin").write_bytes(b"x")
+
+    import huggingface_hub
+    monkeypatch.setattr(huggingface_hub, "snapshot_download", fake_snapshot)
+    modelstore.download_model("base", lambda done, total: seen.append((done, total)), root=tmp_path)
+    assert seen[-1] == (1000, 1000) and any(0 < done < 1000 for done, _ in seen)
+    assert modelstore.model_downloaded("base", tmp_path)
+    monkeypatch.setattr(huggingface_hub, "snapshot_download", lambda *a, **k: None)      # a download that leaves nothing behind
+    with pytest.raises(modelstore.ModelError):
+        modelstore.download_model("small", root=tmp_path)

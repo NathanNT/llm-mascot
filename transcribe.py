@@ -171,3 +171,44 @@ def test_connection(config: dict) -> tuple[bool, str]:
     if not response.ok:
         return False, tr("Transcription service error ({code}) {detail}").format(code=response.status_code, detail="").strip()
     return True, tr("Connected")
+
+
+MIN_PIECE_SECONDS = 5.0          # a piece is sent to the GPU as soon as a pause follows at least this much speech
+PAUSE_SECONDS = 0.4
+
+
+def find_pause(audio: np.ndarray, rate: int = 16000) -> int | None:
+    """Sample index in the middle of the last pause (PAUSE_SECONDS of quiet) that leaves at least MIN_PIECE_SECONDS before it."""
+    frame = rate // 20
+    count = len(audio) // frame
+    need = int(PAUSE_SECONDS * 20)
+    first = int(MIN_PIECE_SECONDS * 20)
+    if count < first + need:
+        return None
+    level = np.abs(audio[:count * frame]).reshape(count, frame).max(axis=1)
+    quiet = level < max(0.008, 0.1 * float(np.percentile(level, 95)))
+    for start in range(count - need, first - 1, -1):
+        if quiet[start:start + need].all():
+            return (start + need // 2) * frame
+    return None
+
+
+PIECE_LIMIT_SECONDS = 13.0       # the GPU server listens to 15 s windows (-ac 768): about five times quicker than the default 30 s
+
+
+def quietest_cut(audio: np.ndarray, limit_seconds: float = PIECE_LIMIT_SECONDS, rate: int = 16000) -> int:
+    """Where to cut a recording that is too long for one window: the quietest 50 ms in its last four seconds."""
+    frame = rate // 20
+    end = min(len(audio), int(limit_seconds * rate)) // frame
+    begin = max(1, end - 4 * 20)
+    level = np.abs(audio[:end * frame]).reshape(end, frame).max(axis=1)
+    return (begin + int(np.argmin(level[begin:end]))) * frame
+
+
+def split_audio(audio: np.ndarray, limit_seconds: float = PIECE_LIMIT_SECONDS, rate: int = 16000) -> list[np.ndarray]:
+    pieces = []
+    while len(audio) > limit_seconds * rate:
+        cut = quietest_cut(audio, limit_seconds, rate)
+        pieces.append(audio[:cut])
+        audio = audio[cut:]
+    return pieces + [audio]

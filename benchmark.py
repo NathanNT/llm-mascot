@@ -80,7 +80,7 @@ def run_gpu(name: str, audio: np.ndarray, language: str) -> dict:
     load = time.perf_counter() - started
     accel.server.transcribe(np.zeros(8000, dtype=np.float32), language, name)      # warm-up, not timed
     started = time.perf_counter()
-    text = accel.server.transcribe(audio, language, name)
+    text = accel.transcribe_gpu(audio, language, name)           # the app's own path, repetition guard included
     return {"text": text, "seconds": time.perf_counter() - started, "load": load}
 
 
@@ -205,6 +205,7 @@ class Window:
         self.rover = rover
         self.settings = prefs.load()
         i18n.set_language(self.settings["ui_language"])
+        rover.set_active(self.settings["theme"])
         self.theme = rover.THEMES[self.settings["theme"]]
         self.language = self.settings["language"]
         self.audio: np.ndarray | None = None
@@ -237,9 +238,9 @@ class Window:
         body, _ = rover.make_chrome(self.root, shim, tr("Speech model benchmark"), self.close)
         outer = tk.Frame(body, bg=theme["desk"], padx=24, pady=8)
         outer.pack()
-        tk.Label(outer, text=tr("Benchmark"), bg=theme["desk"], fg=theme["text"], font=(rover.FONT_SEMIBOLD, 18)).pack(anchor="w")
+        tk.Label(outer, text=tr("Benchmark"), bg=theme["desk"], fg=theme["text"], font=rover.sb(18)).pack(anchor="w")
         tk.Label(outer, text=tr("Read your own text once; every model transcribes the same recording and is scored against it."),
-                 bg=theme["desk"], fg=theme["sec"], font=(rover.FONT_REGULAR, 9)).pack(anchor="w", pady=(0, 10))
+                 bg=theme["desk"], fg=theme["sec"], font=rover.rg(9)).pack(anchor="w", pady=(0, 10))
         columns = tk.Frame(outer, bg=theme["desk"])
         columns.pack()
         left = tk.Frame(columns, bg=theme["desk"])
@@ -253,13 +254,11 @@ class Window:
 
     def heading(self, inner, number: str, text: str):
         theme = self.theme
-        tk.Label(inner, text=f"{number}  {text}", bg=theme["card"], fg=theme["text"], font=(self.rover.FONT_SEMIBOLD, 10)).pack(anchor="w")
+        tk.Label(inner, text=f"{number}  {text}", bg=theme["card"], fg=theme["text"], font=self.rover.sb(10)).pack(anchor="w")
 
     def entry_box(self, inner, height: int):
         theme = self.theme
-        box = tk.Text(inner, width=50, height=height, wrap="word", relief="flat", bg=theme["panel"], fg=theme["text"],
-                      insertbackground=theme["text"], highlightthickness=1, highlightbackground=theme["border"],
-                      highlightcolor=theme["accent"], font=(self.rover.FONT_REGULAR, 10), padx=8, pady=6)
+        box = tk.Text(inner, width=50, height=height, wrap="word", font=self.rover.rg(10), padx=8, pady=6, **self.rover.field_style(theme))
         box.bind("<Button-1>", lambda event: box.focus_force())
         return box
 
@@ -277,14 +276,13 @@ class Window:
         self.small_button(row, tr("Load text…"), self.load_text).pack(side="left", padx=(6, 0))
         self.language_buttons = {}
         for caption, value in reversed((("Français", "fr"), ("English", "en"))):
-            widget = tk.Button(row, text=caption, relief="flat", bd=0, highlightthickness=1, font=(self.rover.FONT_SEMIBOLD, 9),
-                               padx=10, pady=4, cursor="hand2", command=lambda v=value: self.choose_language(v))
-            widget.pack(side="right", padx=(6, 0))
+            widget = self.rover.make_toggle(row, theme, caption, lambda v=value: self.choose_language(v), self.rover.sb(9), 10, 4, theme["card"])
+            widget.pack(side="right", padx=(6, 0) if not theme["titlebar"] else (10, 0))
             self.language_buttons[value] = widget
         self.strip = tk.BooleanVar(value=False)
         tk.Checkbutton(inner, text=tr("Ignore accents when scoring"), variable=self.strip, bg=theme["card"], fg=theme["sec"],
                        selectcolor=theme["panel"], activebackground=theme["card"], activeforeground=theme["text"], bd=0,
-                       highlightthickness=0, font=(self.rover.FONT_REGULAR, 9)).pack(anchor="w", pady=(6, 0))
+                       highlightthickness=0, font=self.rover.rg(9)).pack(anchor="w", pady=(6, 0))
         self.choose_language(self.language)
 
     def choose_language(self, value: str):
@@ -297,14 +295,17 @@ class Window:
         self.heading(inner, "2", tr("Your recording"))
         row = tk.Frame(inner, bg=theme["card"])
         row.pack(fill="x", pady=(8, 0))
-        self.record_button = tk.Button(row, text="●  " + tr("Record"), command=self.toggle_record, relief="flat", bd=0, padx=16, pady=8,
-                                       font=(self.rover.FONT_SEMIBOLD, 10), cursor="hand2", bg=theme["accent"], fg=theme["on_accent"],
-                                       activebackground=theme["accent"], activeforeground=theme["on_accent"])
+        if theme["titlebar"]:             # a Windows XP push button, wide enough for both of its captions
+            self.record_button = self.rover.button(row, theme, "■  " + tr("Record") + "   ", self.toggle_record, primary=True)
+        else:
+            self.record_button = tk.Button(row, text="●  " + tr("Record"), command=self.toggle_record, relief="flat", bd=0, padx=16, pady=8,
+                                           font=self.rover.sb(10), cursor="hand2", bg=theme["accent"], fg=theme["on_accent"],
+                                           activebackground=theme["accent"], activeforeground=theme["on_accent"])
         self.record_button.pack(side="left")
         self.small_button(row, tr("Load audio…"), self.load_audio).pack(side="left", padx=(8, 0))
         self.meter = tk.Canvas(row, width=90, height=10, bg=theme["card"], bd=0, highlightthickness=0)
         self.meter.pack(side="right")
-        self.recording_label = tk.Label(inner, text=tr("No recording yet"), bg=theme["card"], fg=theme["sec"], font=(self.rover.FONT_REGULAR, 9))
+        self.recording_label = tk.Label(inner, text=tr("No recording yet"), bg=theme["card"], fg=theme["sec"], font=self.rover.rg(9))
         self.recording_label.pack(anchor="w", pady=(6, 0))
 
     def fill_models(self, inner):
@@ -319,17 +320,17 @@ class Window:
             row.pack(fill="x", pady=(4, 0))
             check = tk.Checkbutton(row, text=item["label"], variable=var, bg=theme["card"], fg=theme["text"], selectcolor=theme["panel"],
                                    activebackground=theme["card"], activeforeground=theme["text"], bd=0, highlightthickness=0,
-                                   font=(self.rover.FONT_REGULAR, 10), anchor="w")
+                                   font=self.rover.rg(10), anchor="w")
             check.pack(side="left")
             tk.Label(row, text=item["note"], bg=theme["card"], fg=theme["ok"] if item["ready"] else theme["sec"],
-                     font=(self.rover.FONT_REGULAR, 8)).pack(side="right")
+                     font=self.rover.rg(8)).pack(side="right")
         actions = tk.Frame(inner, bg=theme["card"])
         actions.pack(fill="x", pady=(10, 0))
         self.run_button = self.small_button(actions, tr("Run the benchmark"), self.run, primary=True)
         self.run_button.pack(side="left")
         self.small_button(actions, tr("Installed only"), lambda: [self.checks[i["id"]].set(i["ready"] and i["kind"] == "local") for i in self.items]
                           ).pack(side="left", padx=(8, 0))
-        self.status = tk.Label(inner, text="", bg=theme["card"], fg=theme["sec"], font=(self.rover.FONT_REGULAR, 9), anchor="w",
+        self.status = tk.Label(inner, text="", bg=theme["card"], fg=theme["sec"], font=self.rover.rg(9), anchor="w",
                                justify="left", wraplength=400)
         self.status.pack(fill="x", pady=(8, 0))
 
@@ -339,11 +340,11 @@ class Window:
         style = ttk.Style(self.root)
         style.theme_use("clam")
         style.configure("Bench.Treeview", background=theme["panel"], fieldbackground=theme["panel"], foreground=theme["text"], borderwidth=0,
-                        rowheight=26, font=(rover.FONT_REGULAR, 10))
+                        rowheight=26, font=rover.rg(10))
         style.configure("Bench.Treeview", bordercolor=theme["panel"], lightcolor=theme["panel"], darkcolor=theme["panel"])
         style.map("Bench.Treeview", background=[("selected", theme["accent"])], foreground=[("selected", theme["on_accent"])])
         style.configure("Bench.Treeview.Heading", background=theme["card"], foreground=theme["sec"], relief="flat", borderwidth=0,
-                        font=(rover.FONT_SEMIBOLD, 9))
+                        font=rover.sb(9))
         style.map("Bench.Treeview.Heading", background=[("active", theme["card"])])
         columns = ("model", "wer", "time", "speed", "errors")
         self.table = ttk.Treeview(inner, columns=columns, show="headings", height=6, style="Bench.Treeview", selectmode="browse")
@@ -354,12 +355,11 @@ class Window:
         self.table.pack(fill="x", pady=(8, 6))
         self.table.bind("<<TreeviewSelect>>", lambda event: self.show_detail())
         self.summary = tk.Label(inner, text=tr("Run the benchmark to see which model to keep."), bg=theme["card"], fg=theme["sec"],
-                                font=(rover.FONT_REGULAR, 9), anchor="w", justify="left", wraplength=560)
+                                font=rover.rg(9), anchor="w", justify="left", wraplength=560)
         self.summary.pack(fill="x")
-        self.detail = tk.Text(inner, width=70, height=16, wrap="word", relief="flat", bg=theme["panel"], fg=theme["text"], highlightthickness=1,
-                              highlightbackground=theme["border"], font=(rover.FONT_REGULAR, 10), padx=8, pady=6, state="disabled")
-        self.detail.tag_configure("bad", foreground=theme["err"], font=(rover.FONT_SEMIBOLD, 10))
-        self.detail.tag_configure("expected", foreground=theme["err"], font=(rover.FONT_REGULAR, 8))
+        self.detail = tk.Text(inner, width=70, height=16, wrap="word", font=rover.rg(10), padx=8, pady=6, state="disabled", **rover.field_style(theme))
+        self.detail.tag_configure("bad", foreground=theme["err"], font=rover.sb(10))
+        self.detail.tag_configure("expected", foreground=theme["err"], font=rover.rg(8))
         self.detail.tag_configure("extra", foreground=theme["accent"], underline=True)
         self.detail.tag_configure("dim", foreground=theme["sec"])
         self.detail.pack(fill="x", pady=(8, 0))

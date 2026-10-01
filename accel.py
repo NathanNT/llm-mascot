@@ -15,6 +15,7 @@ import socket
 import subprocess
 import threading
 import time
+import zlib
 import zipfile
 from ctypes import wintypes
 from pathlib import Path
@@ -176,7 +177,7 @@ _help_text: str | None = None
 
 
 def fast_flags() -> list[str]:
-    """Greedy decoding and no temperature fallback make dictation several times quicker; only flags this build knows are used."""
+    """Greedy decoding is quicker than the default beam search; only flags this build knows are used."""
     global _help_text
     if _help_text is None:
         try:
@@ -190,9 +191,9 @@ def fast_flags() -> list[str]:
         flags += ["--beam-size", "1"]
     if "--best-of" in _help_text:
         flags += ["--best-of", "1"]
-    if "--no-fallback" in _help_text:
-        flags += ["--no-fallback"]
-    return flags
+    if "--audio-ctx" in _help_text:
+        flags += ["--audio-ctx", "768"]     # half the audio window: short dictations are ~5x quicker, recordings are cut into pieces that fit
+    return flags                      # the temperature fallback stays on: it is what rescues small models from repetition loops
 
 
 class Server:
@@ -245,8 +246,7 @@ class Server:
         try:
             response = requests.post(f"http://127.0.0.1:{self.port}/inference",
                                      files={"file": ("dictation.wav", transcribe.wav_bytes(audio), "audio/wav")},
-                                     data={"response_format": "json", "language": language, "temperature": "0.0", "temperature_inc": "0.0"},
-                                     timeout=(5, 90))
+                                     data={"response_format": "json", "language": language, "temperature": "0.0"}, timeout=(5, 90))
             response.raise_for_status()
             return str(response.json().get("text", "")).strip()
         except (requests.RequestException, ValueError) as exc:
@@ -273,10 +273,20 @@ def stop() -> None:
     server.stop()
 
 
+def looks_degenerate(text: str, seconds: float) -> bool:
+    """A speech model stuck in a loop repeats itself: far too many words, or text that compresses like a repeated phrase."""
+    if len(text.split()) > max(12, 7 * seconds):
+        return True
+    raw = text.encode("utf-8")
+    return len(raw) > 80 and len(raw) / len(zlib.compress(raw)) > 2.4
+
+
 def transcribe_gpu(audio: np.ndarray, language: str, model: str) -> str:
-    text = server.transcribe(audio, language, model)
+    text = " ".join(part for part in (server.transcribe(piece, language, model) for piece in transcribe.split_audio(audio)) if part).strip()
     if not text:
         raise AccelError(tr("No speech recognised"))
+    if looks_degenerate(text, len(audio) / transcribe.SAMPLE_RATE):
+        raise AccelError(tr("The GPU model looped on this recording"))
     return text
 
 

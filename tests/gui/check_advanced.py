@@ -30,6 +30,7 @@ app.root.update()
 app.open_settings()
 window = app.settings_window
 window.toggle_page()
+window = window.peer
 window.top.update()
 
 
@@ -137,8 +138,9 @@ assert startup_calls == [False], startup_calls
 app.open_settings()
 window = app.settings_window
 window.toggle_page()
+window = window.peer
 window.top.update()
-click("This PC")
+click("CPU")
 for _ in range(5):
     window.top.update()
     time.sleep(0.03)
