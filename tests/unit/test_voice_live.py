@@ -1,6 +1,9 @@
 import numpy as np
+import pytest
 
-import voice
+pytest.importorskip("sounddevice")        # the speech stack is not installed in CI
+pytest.importorskip("faster_whisper")
+import voice  # noqa: E402
 
 
 def make_recorder(seen):

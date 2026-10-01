@@ -239,6 +239,7 @@ def test_the_turbo_model_maps_to_its_own_repository(tmp_path):
 
 def test_downloading_a_cpu_model_reports_progress_and_checks_the_result(tmp_path, monkeypatch):
     import modelstore
+    pytest.importorskip("huggingface_hub")
     monkeypatch.setattr(modelstore, "expected_bytes", lambda name: 1000)
     seen = []
 

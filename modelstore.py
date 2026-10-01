@@ -19,12 +19,28 @@ class ModelError(RuntimeError):
     pass
 
 
+SIZES = ("tiny", "base", "small", "medium", "large-v3")
+
+
 def repo_for(name: str) -> str:
-    from faster_whisper.utils import _MODELS
-    repo = _MODELS.get(HF_NAMES.get(name, name))
-    if repo is None:
-        raise ModelError(tr("Unknown model"))
-    return repo
+    """The Hugging Face repository of the CTranslate2 version of a Whisper model."""
+    if name == "turbo":
+        return "mobiuslabsgmbh/faster-whisper-large-v3-turbo"
+    if name in SIZES:
+        return f"Systran/faster-whisper-{name}"
+    raise ModelError(tr("Unknown model"))
+
+
+def _quiet_progress():
+    """A progress-bar class that prints nothing (the app shows its own)."""
+    from huggingface_hub.utils import tqdm
+
+    class Quiet(tqdm):
+        def __init__(self, *args, **kwargs):
+            kwargs["disable"] = True
+            super().__init__(*args, **kwargs)
+
+    return Quiet
 
 
 def cache_folder(name: str, root: Path | None = None) -> Path:
@@ -61,7 +77,6 @@ def _bytes_on_disk(folder: Path) -> int:
 
 def download_model(name: str, progress: Callable[[int, int], None] | None = None, root: Path | None = None) -> None:
     """Download one model into the models folder; `progress(done, total)` is called about four times a second."""
-    from faster_whisper.utils import disabled_tqdm
     from huggingface_hub import snapshot_download
     folder = cache_folder(name, root)
     try:
@@ -78,7 +93,7 @@ def download_model(name: str, progress: Callable[[int, int], None] | None = None
     watcher = threading.Thread(target=watch, daemon=True)
     watcher.start()
     try:
-        snapshot_download(repo_for(name), allow_patterns=FILES, cache_dir=str(root or MODEL_DIR), tqdm_class=disabled_tqdm)
+        snapshot_download(repo_for(name), allow_patterns=FILES, cache_dir=str(root or MODEL_DIR), tqdm_class=_quiet_progress())
     except Exception as exc:
         raise ModelError(tr("Download failed: {detail}").format(detail=str(exc)[:100])) from exc
     finally:
