@@ -6,6 +6,7 @@ import json
 import os
 import random
 import sys
+import queue
 import threading
 import time
 import webbrowser
@@ -41,6 +42,8 @@ from ui_kit import (FLYOUT_DISC, flyout_image, CLAUDE_COLOR, FONT_MONO, FONT_REG
 from voice import Recorder
 import launchers
 import hotkeys
+import vocab
+from tray import TrayIcon
 import mascot_setup
 from dictation_context import RecentDictations
 from windows import (round_top_corners, acquire_single_instance, consume_hotkey, foreground_window, insert_text, is_own_window,
@@ -50,6 +53,7 @@ HERE = Path(__file__).resolve().parent
 # A sprite atlas dropped at assets/rover.png replaces the bundled default mascot.
 ROVER = HERE / "assets" / "rover.png" if (HERE / "assets" / "rover.png").is_file() else HERE / "assets" / "mascot-default.png"
 SPRITE_W, SPRITE_H, SPRITE_FRAMES = 192, 208, 6
+SHRUNK = 0.4            # how small the mascot gets when it has not been used for a while
 PAD = 8                 # transparent margin around the mascot
 BUBBLE_W = 340          # outer width of the two bubbles
 BUBBLE_PAD = 17         # panel border (1) + inner padding (16)
@@ -474,9 +478,18 @@ class RoverApp:
         self.build_menu()
 
         self.recent = RecentDictations()
+        self.scale = self.scale_target = 1.0                  # 1.0 = normal size, SHRUNK = resting small
+        self.hidden = False                                   # tucked into the notification area
+        self.last_activity = time.monotonic()
+        self.tray = TrayIcon(HERE / "assets" / "mascot.ico", "LLM Mascot",
+                             lambda: {"show": tr("Show the mascot"), "hide": tr("Hide in the notification area"), "dictate": tr("Dictate"),
+                                      "settings": tr("Customize…"), "quit": tr("Quit")},
+                             is_hidden=lambda: self.hidden)
+        self.tray.show()                                      # always there (under "Show hidden icons"): the way back when the mascot is tucked away
         self.recorder = Recorder(self.thread_status, self.transcription_ready, self.thread_error,
                                  model_name=self.prefs["whisper_model"], get_config=lambda: self.prefs["transcription"],
-                                 on_partial=self.thread_partial, get_live=lambda: self.prefs["live_transcript"])
+                                 on_partial=self.thread_partial, get_live=lambda: self.prefs["live_transcript"],
+                                 get_vocabulary=lambda: vocab.merge(self.prefs["my_words"], self.prefs["vocabulary"]))
         self.partial = ""
         self.recorder.warm_up()
         self.warm_rewriter()
@@ -486,6 +499,8 @@ class RoverApp:
         if not self.hotkey_ok:
             self.set_status(tr("{shortcut} shortcut unavailable; click the mascot").format(shortcut=hotkeys.label(self.registered_hotkey)))
         self.loop(self.poll_hotkey, 50)
+        self.loop(self.poll_tray, 150)
+        self.loop(self.tray.ensure, 5000)
         self.loop(self.track_focus, 120)
         self.loop(self.animate, 30)
         self.loop(self.tick, 50)
@@ -564,7 +579,7 @@ class RoverApp:
         return round((centroid + frames[0].width / 2) / 2)  # halfway between mass centre and box centre
 
     def mascot_bitmap(self, clip_name: str, index: int) -> layered.Bitmap:
-        key = (clip_name, index, self.badge_color)
+        key = (clip_name, index, self.badge_color, round(self.scale * 40))
         bitmap = self.mascot_bitmaps.get(key)
         if bitmap is None:
             if len(self.mascot_bitmaps) > 400:
@@ -583,6 +598,12 @@ class RoverApp:
             draw.ellipse((0, 0, 16 * SS - 1, 16 * SS - 1), fill=rgb(self.theme["desk"]))
             draw.ellipse((2 * SS, 2 * SS, 14 * SS - 1, 14 * SS - 1), fill=rgb(self.badge_color))
             image.alpha_composite(big.resize((16, 16), Image.Resampling.LANCZOS), (self.mascot_w - PAD - 12, PAD - 4))
+            if self.scale < 0.999:       # shrunk: the whole picture is scaled around the point under the mascot's feet
+                width, height = image.size
+                small = image.resize((max(1, round(width * self.scale)), max(1, round(height * self.scale))), Image.Resampling.LANCZOS)
+                anchor_x, anchor_y = self.anchor_x, self.idle_box[3]
+                image = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+                image.alpha_composite(small, (round(anchor_x * (1 - self.scale)), round(anchor_y * (1 - self.scale))))
             bitmap = self.mascot_bitmaps[key] = layered.Bitmap(image)
         return bitmap
 
@@ -649,6 +670,7 @@ class RoverApp:
         self.menu.add_command(label=tr("Copy last text"), command=self.copy_text)
         self.menu.add_command(label=tr("Compare speech models…"), command=self.open_benchmark)
         self.menu.add_command(label=tr("Customize…"), command=self.open_settings)
+        self.menu.add_command(label=tr("Hide in the notification area"), command=self.hide_to_tray)
         self.menu.add_command(label=tr("Open Bloub"), command=lambda: webbrowser.open(prefs.BLOUB_URL))
         self.menu.add_command(label=tr("Open Claude usage"), command=lambda: webbrowser.open(CLAUDE_USAGE_URL))
         self.menu.add_separator()
@@ -808,6 +830,12 @@ class RoverApp:
         moving = False
         for popup in self.animated:
             moving = popup.step(dt) or moving
+        if self.scale != self.scale_target:
+            self.scale += (self.scale_target - self.scale) * min(1.0, dt * 9)
+            if abs(self.scale - self.scale_target) < 0.012:
+                self.scale = self.scale_target
+            self.paint_mascot()
+            moving = True
         if moving:
             self.root.after(15, self.animation_step)
         else:
@@ -1002,6 +1030,7 @@ class RoverApp:
         self.update_status_visuals()
 
     def toggle_voice(self, from_hotkey: bool = False):
+        self.wake()
         if self.recorder.recording:
             self.recorder.stop()
             self.step = "whisper"
@@ -1036,6 +1065,73 @@ class RoverApp:
             self.log_exception(type(exc), exc, exc.__traceback__)
         finally:
             self.root.after(delay() if callable(delay) else delay, lambda: self.loop(body, delay))
+
+    # ------------------------------------------------------------------ standby: shrink, then hide in the notification area
+    def touch(self) -> None:
+        self.last_activity = time.monotonic()
+
+    def set_scale(self, target: float) -> None:
+        self.scale_target = target
+        self.kick_animation()
+
+    def wake(self) -> None:
+        """Back to normal size (and out of the notification area), as soon as you come back."""
+        self.touch()
+        if self.hidden:
+            self.restore()
+        elif self.scale_target < 1.0:
+            self.set_scale(1.0)
+
+    def idle_check(self, now: float) -> None:
+        if self.hidden:
+            return
+        editor_open = getattr(self, "mascot_editor", None) is not None and self.mascot_editor.alive()
+        settings_open = self.settings_window is not None and any(w.visible for w in self.settings_window.pair())
+        if (self.dict_state() != "ready" or self.revealed or self.conso.visible() or self.dictation.visible() or editor_open or settings_open
+                or self.flyout_index is not None or self.drag_origin or now < self.notice_until):
+            self.last_activity = now
+            return
+        idle = now - self.last_activity
+        hide_after, shrink_after = self.prefs["idle_hide"] * 60, self.prefs["idle_shrink"] * 60
+        if hide_after and idle >= hide_after:
+            self.hide_to_tray()
+        elif shrink_after and idle >= shrink_after and self.scale_target == 1.0:
+            self.set_scale(SHRUNK)
+
+    def hide_to_tray(self) -> None:
+        if self.hidden or self.dict_state() != "ready":
+            return
+        self.set_revealed(False)
+        for popup in self.animated:
+            popup.hide()
+        self.root.withdraw()
+        self.hidden = True
+
+    def restore(self) -> None:
+        if not self.hidden:
+            return
+        self.hidden = False
+        self.touch()
+        self.scale, self.scale_target = SHRUNK, 1.0                # grows back from its small size
+        self.root.deiconify()
+        self.paint_mascot()
+        self.kick_animation()
+
+    def poll_tray(self):
+        try:
+            event = self.tray.events.get_nowait()
+        except queue.Empty:
+            return
+        if event == "quit":
+            self.quit()
+        elif event == "hide":
+            self.hide_to_tray()
+        else:
+            self.wake()
+            if event == "dictate":
+                self.toggle_voice()
+            elif event == "settings":
+                self.open_settings()
 
     def poll_hotkey(self):
         if self.hotkey_ok and consume_hotkey():
@@ -1091,6 +1187,13 @@ class RoverApp:
         """Round buttons and the rail appear while the pointer is on Rover; a button opens its bubble."""
         cluster = (self.btn_top.win, self.btn_bottom.win, self.conso.win, self.dictation.win, self.rail.win,
                    self.flyout.win)
+        self.idle_check(now)
+        if self.hidden:
+            return
+        if (self.scale < 0.999 or self.scale_target < 1.0) and (self.pointer_on_mascot() or any(pointer_inside(w) for w in cluster)):
+            self.wake()                                    # you came back
+        if self.scale < 0.95:
+            return                                         # still small: nothing to reveal until it is back to size
         over_any = self.pointer_on_mascot() or any(pointer_inside(window) for window in cluster)
         if over_any:
             self.hover_last = now
@@ -1216,9 +1319,15 @@ class RoverApp:
     def pointer_on_mascot(self) -> bool:
         """True over the resting mascot (a few pixels of margin), not over the empty corners of its window."""
         px, py = self.root.winfo_pointerxy()
-        left, top, right, bottom = self.idle_box
+        left, top, right, bottom = self.visible_box()
         x, y = px - self.root.winfo_rootx(), py - self.root.winfo_rooty()
         return left - 10 <= x <= right + 10 and top - 10 <= y <= bottom + 10
+
+    def visible_box(self) -> tuple[float, float, float, float]:
+        """Where the mascot really is on its window: its resting box, scaled around the point under its feet while it is shrunk."""
+        left, top, right, bottom = self.idle_box
+        ax, ay, s = self.anchor_x, bottom, self.scale
+        return ax - (ax - left) * s, ay - (ay - top) * s, ax + (right - ax) * s, ay
 
     def set_revealed(self, revealed: bool) -> None:
         self.revealed = revealed
@@ -1549,6 +1658,7 @@ class RoverApp:
     # ------------------------------------------------------------------ dragging
 
     def mouse_down(self, event):
+        self.wake()
         self.drag_origin = (event.x_root, event.y_root, self.root.winfo_x(), self.root.winfo_y())
         self.dragged = False
         self.last_drag_x = event.x_root
@@ -1770,6 +1880,7 @@ class RoverApp:
         self.recorder.stop()
         accel.stop()
         codex_server.server.stop()
+        self.tray.hide()
         if self.hotkey_ok:
             unregister_hotkey()
         self.root.destroy()
@@ -2138,6 +2249,57 @@ class MascotEditor:
         self.top.destroy()
 
 
+class ScrollArea:
+    """A frame that scrolls vertically (mouse wheel, draggable bar) when its content is taller than `limit` pixels."""
+
+    def __init__(self, parent, theme: dict, limit: int):
+        self.theme, self.limit, self.scrolling = theme, limit, False
+        self.holder = tk.Frame(parent, bg=theme["desk"])
+        self.canvas = tk.Canvas(self.holder, bg=theme["desk"], bd=0, highlightthickness=0, yscrollincrement=40)
+        self.bar = tk.Canvas(self.holder, width=17 if theme["titlebar"] else 8, bg=theme["desk"], bd=0, highlightthickness=0)
+        self.inner = tk.Frame(self.canvas, bg=theme["desk"])
+        self.canvas.create_window(0, 0, window=self.inner, anchor="nw")
+        self.canvas.pack(side="left")
+        self.canvas.configure(yscrollcommand=self.draw_bar)
+
+    def finish(self) -> None:
+        self.inner.update_idletasks()
+        width, height = self.inner.winfo_reqwidth(), self.inner.winfo_reqheight()
+        shown = min(height, self.limit)
+        self.canvas.configure(width=width, height=shown, scrollregion=(0, 0, width, height))
+        self.scrolling = height > self.limit
+        if self.scrolling:
+            self.bar.configure(height=shown)
+            self.bar.pack(side="left", fill="y", padx=(6, 0))
+            self.bar.bind("<Button-1>", self.drag)
+            self.bar.bind("<B1-Motion>", self.drag)
+            self.holder.bind("<Enter>", lambda event: self.holder.bind_all("<MouseWheel>", self.wheel))
+            self.holder.bind("<Leave>", lambda event: self.holder.unbind_all("<MouseWheel>"))
+            self.draw_bar(*self.canvas.yview())
+
+    def wheel(self, event) -> None:
+        if not isinstance(event.widget, (tk.Text, tk.Listbox)):       # those scroll themselves
+            self.canvas.yview_scroll(-1 if event.delta > 0 else 1, "units")
+
+    def drag(self, event) -> None:
+        first, last = self.canvas.yview()
+        self.canvas.yview_moveto(max(0.0, event.y / max(1, self.bar.winfo_height()) - (last - first) / 2))
+
+    def draw_bar(self, first, last) -> None:
+        bar, theme = self.bar, self.theme
+        bar.delete("all")
+        if not self.scrolling:
+            return
+        height, width = max(1, self.bar.winfo_height() or self.limit), int(bar["width"])
+        top, bottom = height * float(first), height * float(last)
+        if theme["titlebar"]:
+            bar.create_rectangle(0, 0, width - 1, height - 1, fill="#f3f1ea", outline="#ebe9dd")
+            bar.create_rectangle(1, top + 1, width - 2, bottom - 1, fill="#c1d2f8", outline="#7ba2e7")
+        else:
+            bar.create_line(width // 2, 3, width // 2, height - 3, width=4, capstyle="round", fill=theme["track"])
+            bar.create_line(width // 2, top + 3, width // 2, max(top + 6, bottom - 3), width=4, capstyle="round", fill=theme["border"])
+
+
 class XpRadio(tk.Frame):
     """A Luna radio button with its caption; behaves like the toggle buttons of the other themes (command, restyle_toggle)."""
 
@@ -2372,17 +2534,21 @@ class SettingsWindow:
 
     def build_advanced(self, outer):
         theme = self.app.theme
-        columns = tk.Frame(outer, bg=theme["desk"])
-        columns.pack(pady=(18, 4))
+        left_edge, top_edge, right_edge, bottom_edge = monitor_work_area(self.app.root.winfo_x(), self.app.root.winfo_y())
+        area = ScrollArea(outer, theme, max(420, bottom_edge - top_edge - 215))      # the page scrolls instead of outgrowing the screen
+        area.holder.pack(pady=(18, 4))
+        columns = area.inner
         left = tk.Frame(columns, bg=theme["desk"])
         left.pack(side="left", padx=(0, 18), anchor="n")
         right = tk.Frame(columns, bg=theme["desk"])
         right.pack(side="left", anchor="n")
         self.section(left, tr("General"), self.fill_general, width=440).pack(pady=(0, 12))
         self.section(left, tr("Speech recognition"), self.fill_speech, width=440).pack(pady=(0, 12))
-        self.section(left, tr("Context between dictations"), self.fill_context, width=440).pack()
+        self.section(left, tr("Standby"), self.fill_standby, width=440).pack()
         self.section(right, tr("Transcription style"), self.fill_style, width=440).pack(pady=(0, 12))
-        self.section(right, tr("Text rewriting"), self.fill_rewrite, width=440).pack()
+        self.section(right, tr("Text rewriting"), self.fill_rewrite, width=440).pack(pady=(0, 12))
+        self.section(right, tr("Context between dictations"), self.fill_context, width=440).pack()
+        area.finish()
         self.refresh_advanced()
 
     def refresh_advanced(self):
@@ -2499,7 +2665,7 @@ class SettingsWindow:
         self.fill_shortcut(inner)
         self.choice(inner, ((tr("On"), "on"), (tr("Off"), "off")), lambda: "on" if app.prefs["live_transcript"] else "off",
                     lambda v: app.prefs.__setitem__("live_transcript", v == "on"), label=tr("Live transcription"))
-        tk.Label(inner, text=tr("Shows the words in the microphone bubble as you speak. GPU only."), bg=app.theme["card"], fg=app.theme["sec"],
+        tk.Label(inner, text=tr("Shows the words as you speak (GPU only)."), bg=app.theme["card"], fg=app.theme["sec"],
                  font=rg(8), wraplength=400, justify="left").pack(anchor="w", pady=(2, 0))
 
     def fill_speech(self, inner):
@@ -2521,7 +2687,79 @@ class SettingsWindow:
             self.fill_gpu(inner)
         else:
             self.fill_remote(inner)
+        self.fill_vocabulary(inner)
         button(inner, self.app.theme, tr("Benchmark the models…"), app.open_benchmark).pack(anchor="w", pady=(8, 0))
+
+    def fill_vocabulary(self, inner):
+        """Words the speech model should expect: English terms in French sentences are otherwise heard as French look-alikes."""
+        app, theme = self.app, self.app.theme
+        bg = theme["card"]
+        def word_box(title: str, key: str, height: int, extra=None):
+            head = tk.Frame(inner, bg=bg)
+            head.pack(fill="x", pady=(12, 0))
+            tk.Label(head, text=title, bg=bg, fg=theme["text"], font=sb(10)).pack(side="left")
+            box = tk.Text(inner, width=50, height=height, wrap="word", font=rg(9), padx=6, pady=4, undo=True, **field_style(theme))
+            box.insert("1.0", app.prefs[key])
+
+            def edited(_event=None):
+                app.prefs[key] = box.get("1.0", "end-1c")[:1500]
+
+            box.bind("<KeyRelease>", edited)
+            box.bind("<<Paste>>", lambda event: box.after(10, edited))
+            box.bind("<Button-1>", lambda event: box.focus_force())
+            box.pack(fill="x", pady=(4, 0))
+            return head, box, edited
+
+        head, mine, mine_edited = word_box(tr("My words"), "my_words", 2)
+        button(head, theme, tr("Learn from a folder…"), lambda: self.learn_from_folder(mine, mine_edited)).pack(side="right")
+        tk.Label(inner, text=tr("Project and product names, people, jargon: the words Whisper keeps getting wrong. Separate them with commas."),
+                 bg=bg, fg=theme["sec"], font=rg(8), wraplength=400, justify="left").pack(anchor="w", pady=(3, 0))
+        head, technical, technical_edited = word_box(tr("Technical terms"), "vocabulary", 3)
+
+        def reset():
+            technical.delete("1.0", "end")
+            technical.insert("1.0", vocab.DEFAULT_TERMS)
+            technical_edited()
+
+        button(head, theme, tr("Default list"), reset).pack(side="right")
+        tk.Label(inner, text=tr("English terms inside French sentences are heard as French look-alikes unless Whisper expects them."),
+                 bg=bg, fg=theme["sec"], font=rg(8), wraplength=400, justify="left").pack(anchor="w", pady=(3, 0))
+
+    def learn_from_folder(self, box: tk.Text, edited) -> None:
+        """Pick a project folder; its names (folders, packages, README titles, source files) are offered as words to add."""
+        app, theme = self.app, self.app.theme
+        folder = filedialog.askdirectory(parent=self.top, title=tr("Choose a project folder"))
+        if not folder:
+            return
+        found = vocab.harvest(folder)
+        dialog = tk.Toplevel(app.root)
+        dialog.overrideredirect(True)
+        dialog.attributes("-topmost", True)
+        body, _ = make_chrome(dialog, app, tr("Learn from a folder"), dialog.destroy)
+        form = tk.Frame(body, bg=theme["desk"], padx=22, pady=12)
+        form.pack()
+        tk.Label(form, text=Path(folder).name, bg=theme["desk"], fg=theme["text"], font=sb(11)).pack(anchor="w")
+        tk.Label(form, text=tr("Names found in this project (only names and titles are read, never your code). Remove what you do not say out loud."),
+                 bg=theme["desk"], fg=theme["sec"], font=rg(9), wraplength=420, justify="left").pack(anchor="w", pady=(2, 8))
+        words = tk.Text(form, width=52, height=7, wrap="word", font=rg(10), padx=8, pady=6, **field_style(theme))
+        words.insert("1.0", ", ".join(found) if found else "")
+        words.pack(fill="x")
+        if not found:
+            tk.Label(form, text=tr("Nothing worth adding was found in this folder."), bg=theme["desk"], fg=theme["err"], font=rg(9)).pack(anchor="w", pady=(6, 0))
+
+        def add():
+            box.delete("1.0", "end")
+            box.insert("1.0", vocab.merge(app.prefs["my_words"], words.get("1.0", "end-1c")))
+            edited()
+            dialog.destroy()
+
+        actions = tk.Frame(form, bg=theme["desk"])
+        actions.pack(fill="x", pady=(12, 0))
+        button(actions, theme, tr("Add to my words"), add, primary=True).pack(side="left")
+        button(actions, theme, tr("Cancel"), dialog.destroy).pack(side="left", padx=(8, 0))
+        dialog.update_idletasks()
+        place_window(dialog, self.top.winfo_x() + 60, self.top.winfo_y() + 80, dialog.winfo_reqwidth(), dialog.winfo_reqheight())
+        dialog.deiconify()
 
     def fill_local_models(self, inner, on_gpu: bool = False):
         app, theme = self.app, self.app.theme
@@ -2843,6 +3081,21 @@ class SettingsWindow:
                  tr("Your dictation text is sent to the selected service to be rewritten."), bg=bg, fg=theme["sec"],
                  font=rg(8), wraplength=400, justify="left").pack(anchor="w", pady=(8, 0))
 
+    def fill_standby(self, inner):
+        """When you have not used the mascot for a while it shrinks, then hides in the notification area; coming back restores it."""
+        app, theme = self.app, self.app.theme
+        bg = theme["card"]
+
+        def minutes(value: int) -> str:
+            return tr("Never") if value == 0 else (f"{value} min" if value < 60 else f"{value // 60} h")
+
+        self.choice(inner, tuple((minutes(v), v) for v in prefs.SHRINK_CHOICES), lambda: app.prefs["idle_shrink"],
+                    lambda v: app.prefs.__setitem__("idle_shrink", v), label=tr("Shrink after"))
+        self.choice(inner, tuple((minutes(v), v) for v in prefs.HIDE_CHOICES), lambda: app.prefs["idle_hide"],
+                    lambda v: app.prefs.__setitem__("idle_hide", v), label=tr("Hide after"))
+        tk.Label(inner, text=tr("Hidden, it waits in the notification area (next to the clock); hover it or press the shortcut to bring it back."),
+                 bg=bg, fg=theme["sec"], font=rg(8), wraplength=400, justify="left").pack(anchor="w", pady=(6, 0))
+
     def fill_context(self, inner):
         """Keep the last dictations in memory and send them along with the next one, so the rewrite understands what you refer to."""
         app, theme = self.app, self.app.theme
@@ -2851,9 +3104,8 @@ class SettingsWindow:
                     lambda v: app.prefs.__setitem__("keep_context", v == "on"), label=tr("Remember recent dictations"))
         row = tk.Frame(inner, bg=bg)
         row.pack(fill="x", pady=(4, 0))
-        tk.Label(row, text=tr("The last 5 dictations of the past 30 minutes are sent with the next one, so the rewrite understands what "
-                              "you refer to. Kept in memory only."), bg=bg, fg=theme["sec"], font=rg(8), wraplength=290,
-                 justify="left").pack(side="left")
+        tk.Label(row, text=tr("The last 5 dictations (30 min) go with the next one. Memory only."), bg=bg, fg=theme["sec"], font=rg(8),
+                 wraplength=290, justify="left").pack(side="left")
         button(row, theme, tr("Forget now"), app.recent.clear).pack(side="right")
 
     def fill_style(self, inner):
@@ -2864,7 +3116,7 @@ class SettingsWindow:
         buttons = {}
         entries = [(item[0], tr(item[1])) for item in styles.STYLES] + [(styles.CUSTOM, tr("Custom"))]
         description = tk.Label(inner, bg=bg, fg=theme["sec"], font=rg(9), anchor="w", justify="left", wraplength=400)
-        box = tk.Text(inner, width=50, height=9, wrap="word", font=rg(10), padx=8, pady=6, undo=True, **field_style(theme))
+        box = tk.Text(inner, width=50, height=6, wrap="word", font=rg(10), padx=8, pady=6, undo=True, **field_style(theme))
         loading = {"busy": False}
 
         def load(text: str):

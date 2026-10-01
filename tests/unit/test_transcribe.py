@@ -117,3 +117,72 @@ def test_connection_test_uses_the_free_models_endpoint(monkeypatch):
     assert ok and calls == ["https://api.openai.com/v1/models"]
     monkeypatch.setattr(transcribe.requests, "get", lambda *a, **k: Reply(401, {}))
     assert transcribe.test_connection({"engine": "openai", "api_key": secrets_store.protect("sk-abc")})[0] is False
+
+
+# ---------------------------------------------------------------------------------------------- long recordings
+
+def talking(seconds, rng, pause_every=7.0):
+    """Noise standing for speech, with a short pause every few seconds."""
+    sound = (rng.standard_normal(int(16000 * seconds)) * 0.1).astype(np.float32)
+    for start in np.arange(pause_every, seconds, pause_every):
+        sound[int(start * 16000): int((start + 0.6) * 16000)] = 0
+    return sound
+
+
+def test_cutting_ten_minutes_of_speech_as_it_arrives_loses_nothing_and_stays_cheap():
+    import time
+    sound = talking(600, np.random.default_rng(3))                      # ten minutes, fed 100 ms at a time like the microphone
+    cutter, pieces = transcribe.PieceCutter(), []
+    started = time.perf_counter()
+    for begin in range(0, len(sound), 1600):
+        pieces += cutter.feed([sound[begin:begin + 1600]])
+    elapsed = time.perf_counter() - started
+    assert sum(len(p) for p in pieces) == cutter.consumed and np.array_equal(np.concatenate([*pieces, cutter.pending]), sound)
+    assert all(len(p) <= 13 * 16000 for p in pieces) and len(cutter.pending) <= 13 * 16000
+    assert elapsed < 8, f"cutting must not slow down as the recording grows ({elapsed:.1f} s)"
+
+
+def test_a_long_recording_without_any_pause_is_still_cut_into_windows():
+    sound = (np.random.default_rng(4).standard_normal(16000 * 60) * 0.1).astype(np.float32)
+    cutter, pieces = transcribe.PieceCutter(), []
+    for begin in range(0, len(sound), 1600):
+        pieces += cutter.feed([sound[begin:begin + 1600]])
+    assert len(pieces) >= 4 and all(len(p) <= 13 * 16000 for p in pieces)
+
+
+def test_a_service_gets_a_long_recording_in_pieces_and_silence_is_skipped(monkeypatch):
+    sent = []
+
+    def fake_remote(piece, language, config):
+        sent.append(len(piece) / 16000)
+        return f"part{len(sent)}"
+
+    monkeypatch.setattr(transcribe, "transcribe_remote", fake_remote)
+    monkeypatch.setattr(transcribe, "REMOTE_PIECE_SECONDS", 30.0)
+    sound = talking(100, np.random.default_rng(5))
+    sound[int(65 * 16000): int(95 * 16000)] = 0                               # a silent stretch of its own
+    text = transcribe.transcribe_remote_long(sound, "fr", {})
+    assert text.startswith("part1 part2") and len(sent) >= 2 and all(seconds <= 30 for seconds in sent)
+    sent.clear()
+    assert transcribe.transcribe_remote_long(talking(20, np.random.default_rng(6)), "fr", {}) == "part1" and len(sent) == 1
+
+
+def test_a_silent_piece_does_not_sink_a_long_recording(monkeypatch):
+    answers = iter([transcribe.TranscribeError("none", empty=True), "second"])
+
+    def fake_remote(piece, language, config):
+        answer = next(answers)
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    monkeypatch.setattr(transcribe, "transcribe_remote", fake_remote)
+    monkeypatch.setattr(transcribe, "REMOTE_PIECE_SECONDS", 20.0)
+    assert transcribe.transcribe_remote_long(talking(35, np.random.default_rng(7)), "fr", {}) == "second"
+
+
+def test_the_recorder_listens_for_half_an_hour():
+    pytest.importorskip("sounddevice")
+    pytest.importorskip("faster_whisper")
+    import voice
+    assert voice.MAX_SECONDS >= 30 * 60

@@ -23,6 +23,7 @@ import numpy as np
 import scoring
 import settings as prefs
 import transcribe
+import vocab
 import i18n
 from i18n import tr
 
@@ -56,6 +57,7 @@ def load_wav(path: str | Path) -> np.ndarray:
 
 
 _models: dict[str, object] = {}
+PROMPT = ""            # the vocabulary prompt used by every run (set from the window)
 
 
 def run_local(name: str, audio: np.ndarray, language: str) -> dict:
@@ -66,9 +68,9 @@ def run_local(name: str, audio: np.ndarray, language: str) -> dict:
     if name not in _models:
         _models[name] = WhisperModel(name, device="cpu", compute_type="int8", download_root=str(MODEL_DIR))
     load = time.perf_counter() - started
-    local_transcribe(_models[name], np.zeros(8000, dtype=np.float32), language)      # warm-up, not timed
+    local_transcribe(_models[name], np.zeros(8000, dtype=np.float32), language, PROMPT)      # warm-up, not timed
     started = time.perf_counter()
-    text = local_transcribe(_models[name], audio, language)
+    text = local_transcribe(_models[name], audio, language, PROMPT)
     return {"text": text, "seconds": time.perf_counter() - started, "load": load}
 
 
@@ -80,13 +82,13 @@ def run_gpu(name: str, audio: np.ndarray, language: str) -> dict:
     load = time.perf_counter() - started
     accel.server.transcribe(np.zeros(8000, dtype=np.float32), language, name)      # warm-up, not timed
     started = time.perf_counter()
-    text = accel.transcribe_gpu(audio, language, name)           # the app's own path, repetition guard included
+    text = accel.transcribe_gpu(audio, language, name, PROMPT)   # the app's own path, repetition guard included
     return {"text": text, "seconds": time.perf_counter() - started, "load": load}
 
 
 def run_remote(config: dict, audio: np.ndarray, language: str) -> dict:
     started = time.perf_counter()
-    text = transcribe.transcribe_remote(audio, language, config)
+    text = transcribe.transcribe_remote(audio, language, {**config, "prompt": PROMPT})
     return {"text": text, "seconds": time.perf_counter() - started, "load": 0.0}
 
 
@@ -189,6 +191,8 @@ def cli(args) -> int:
         print("Nothing to run: no model selected or ready.")
         return 1
     seconds = len(audio) / SAMPLE_RATE
+    global PROMPT
+    PROMPT = vocab.build_prompt(args.vocabulary, "", args.lang)
     done = benchmark(items, audio, args.lang, reference, args.strip_accents,
                      lambda r: print(f"  {r['name']}: " + (f"{r['wer'] * 100:.1f} % in {r['seconds']:.2f} s" if r["wer"] is not None else r["error"])))
     print()
@@ -279,6 +283,10 @@ class Window:
             widget = self.rover.make_toggle(row, theme, caption, lambda v=value: self.choose_language(v), self.rover.sb(9), 10, 4, theme["card"])
             widget.pack(side="right", padx=(6, 0) if not theme["titlebar"] else (10, 0))
             self.language_buttons[value] = widget
+        self.use_vocabulary = tk.BooleanVar(value=bool((self.settings.get("my_words", "") + self.settings.get("vocabulary", "")).strip()))
+        tk.Checkbutton(inner, text=tr("Use my vocabulary (Advanced settings)"), variable=self.use_vocabulary, bg=theme["card"], fg=theme["sec"],
+                       selectcolor=theme["panel"], activebackground=theme["card"], activeforeground=theme["text"], bd=0,
+                       highlightthickness=0, font=self.rover.rg(9)).pack(anchor="w", pady=(6, 0))
         self.strip = tk.BooleanVar(value=False)
         tk.Checkbutton(inner, text=tr("Ignore accents when scoring"), variable=self.strip, bg=theme["card"], fg=theme["sec"],
                        selectcolor=theme["panel"], activebackground=theme["card"], activeforeground=theme["text"], bd=0,
@@ -430,6 +438,8 @@ class Window:
         self.status.configure(text=tr("Running… {note}").format(note=(tr("downloading {names} first") .format(names=", ".join(downloads))
                                                                         if downloads else "")), fg=self.theme["sec"])
         audio, language, strip = self.audio, self.language, self.strip.get()
+        global PROMPT
+        PROMPT = vocab.build_prompt(self.settings.get("my_words", ""), self.settings.get("vocabulary", ""), language) if self.use_vocabulary.get() else ""
         for item in chosen:
             self.table.insert("", "end", iid=item["id"], values=(item["label"], "…", "", "", ""))
 
@@ -547,6 +557,7 @@ def main() -> int:
     parser.add_argument("--models", default="", help="comma separated: tiny,base,small,turbo,medium,large-v3,openai,groq")
     parser.add_argument("--lang", default="en", choices=("fr", "en"))
     parser.add_argument("--strip-accents", action="store_true")
+    parser.add_argument("--vocabulary", default="", help="words to expect, comma separated (as in the advanced settings)")
     args = parser.parse_args()
     if args.audio and args.text:
         return cli(args)

@@ -29,9 +29,10 @@ _SAFE_MODEL = re.compile(r"^[\w.\-:/]{1,80}$")
 
 
 class TranscribeError(RuntimeError):
-    def __init__(self, message: str, recoverable: bool = False):
+    def __init__(self, message: str, recoverable: bool = False, empty: bool = False):
         super().__init__(message)
         self.recoverable = recoverable          # worth falling back to the local model
+        self.empty = empty                      # the service understood nothing in this audio (silence)
 
 
 def is_remote(config: dict) -> bool:
@@ -113,8 +114,9 @@ def transcribe_remote(audio: np.ndarray, language: str, config: dict) -> str:
             settings["base_url"] + "/audio/transcriptions",
             headers={"Authorization": "Bearer " + settings["key"]},
             files={"file": ("dictation.wav", wav_bytes(audio), "audio/wav")},
-            data={"model": settings["model"], "language": language, "response_format": "json", "temperature": "0"},
-            timeout=(8, 60),
+            data={"model": settings["model"], "language": language, "response_format": "json", "temperature": "0",
+                  **({"prompt": config["prompt"]} if config.get("prompt") else {})},
+            timeout=(8, 60 + len(audio) / SAMPLE_RATE / 4),          # a long recording takes the service longer
         )
     except requests.Timeout as exc:
         raise TranscribeError(tr("The service took too long to answer"), recoverable=True) from exc
@@ -127,8 +129,30 @@ def transcribe_remote(audio: np.ndarray, language: str, config: dict) -> str:
     except ValueError as exc:
         raise TranscribeError(tr("Unreadable answer from the service")) from exc
     if not text:
-        raise TranscribeError(tr("No speech recognised"))
+        raise TranscribeError(tr("No speech recognised"), empty=True)
     return text
+
+
+REMOTE_PIECE_SECONDS = 600.0     # services refuse uploads above ~25 MB: ten minutes of 16 kHz mono is about 19 MB
+
+
+def transcribe_remote_long(audio: np.ndarray, language: str, config: dict) -> str:
+    """A long recording is sent to the service in pieces cut at its quietest moments; silent pieces are skipped."""
+    pieces = split_audio(audio, REMOTE_PIECE_SECONDS)
+    if len(pieces) == 1:
+        return transcribe_remote(audio, language, config)
+    texts = []
+    for piece in pieces:
+        if float(np.max(np.abs(piece))) < 0.003:
+            continue
+        try:
+            texts.append(transcribe_remote(piece, language, config))
+        except TranscribeError as exc:
+            if not exc.empty:
+                raise
+    if not texts:
+        raise TranscribeError(tr("No speech recognised"), empty=True)
+    return " ".join(texts)
 
 
 def is_gpu(config: dict) -> bool:
@@ -140,7 +164,7 @@ def run(audio: np.ndarray, language: str, config: dict, local, fallback: bool) -
     if is_gpu(config):
         import accel                               # imported here: accel itself needs this module
         try:
-            return accel.transcribe_gpu(audio, language, config.get("whisper_model", "base"))
+            return accel.transcribe_gpu(audio, language, config.get("whisper_model", "base"), config.get("prompt", ""))
         except accel.AccelError as exc:
             if fallback:
                 return local(audio, language)
@@ -148,7 +172,7 @@ def run(audio: np.ndarray, language: str, config: dict, local, fallback: bool) -
     if not is_remote(config):
         return local(audio, language)
     try:
-        return transcribe_remote(audio, language, config)
+        return transcribe_remote_long(audio, language, config)
     except TranscribeError as exc:
         if exc.recoverable and fallback:
             return local(audio, language)
@@ -212,3 +236,27 @@ def split_audio(audio: np.ndarray, limit_seconds: float = PIECE_LIMIT_SECONDS, r
         pieces.append(audio[:cut])
         audio = audio[cut:]
     return pieces + [audio]
+
+
+class PieceCutter:
+    """Audio arrives a moment at a time while you talk; this hands back the pieces that are ready to be transcribed
+    (everything before a pause, or before the quietest moment when there is no pause yet), and keeps only what is not cut yet."""
+
+    def __init__(self) -> None:
+        self.pending = np.zeros(0, dtype=np.float32)
+        self.consumed = 0                         # samples already handed back
+
+    def feed(self, fresh: list[np.ndarray]) -> list[np.ndarray]:
+        if fresh:
+            self.pending = np.concatenate([self.pending, *fresh])
+        ready = []
+        window = int(PIECE_LIMIT_SECONDS * SAMPLE_RATE)
+        while True:
+            cut = find_pause(self.pending[:window])                  # even if the app stalled and a lot arrived at once, no piece exceeds the window
+            if not cut and len(self.pending) > (PIECE_LIMIT_SECONDS - 1) * SAMPLE_RATE:
+                cut = quietest_cut(self.pending)
+            if not cut:
+                return ready
+            ready.append(self.pending[:cut])
+            self.pending = self.pending[cut:]
+            self.consumed += cut

@@ -115,5 +115,39 @@ assert live.cget("text").startswith("…") and len(live.cget("text")) == 211
 app.prefs["live_transcript"] = False
 app.render_dictation()
 assert app.live_widgets.get("live") is None
+# --- "My words": typing updates the setting, and a project folder can teach its names
+from tkinter import filedialog
+
+project = Path(tempfile.mkdtemp()) / "paperclip-orchestrator"
+(project / "src").mkdir(parents=True)
+(project / "package.json").write_text(json.dumps({"name": "paperclip-orchestrator", "dependencies": {"zod": "3"}}))
+(project / "src" / "dispatcher.ts").write_text("")
+pump(0.3)
+boxes = [w for w in widgets() if isinstance(w, tk.Text)]
+my_words = next(w for w in boxes if int(w.cget("height")) == 2)
+my_words.delete("1.0", "end")
+my_words.insert("1.0", "Paperclip")
+my_words.focus_force()
+my_words.event_generate("<KeyRelease>", keysym="a")
+assert app.prefs["my_words"] == "Paperclip", app.prefs["my_words"]
+filedialog.askdirectory = lambda **kwargs: str(project)
+known = {w for w in app.root.winfo_children() if isinstance(w, tk.Toplevel)}
+press("Learn from a folder…")
+dialogs = [w for w in app.root.winfo_children() if isinstance(w, tk.Toplevel) and w not in known]
+assert dialogs, "the dialog with the names found is open"
+
+
+def descendants(root):
+    for child in root.winfo_children():
+        yield child
+        yield from descendants(child)
+
+
+found = next(w for w in descendants(dialogs[0]) if isinstance(w, tk.Text)).get("1.0", "end")
+assert "paperclip-orchestrator" in found and "dispatcher" in found and "zod" in found, found
+next(w for w in descendants(dialogs[0]) if isinstance(w, tk.Button) and w.cget("text") == "Add to my words").invoke()
+pump(0.3)
+assert app.prefs["my_words"].startswith("Paperclip") and "dispatcher" in app.prefs["my_words"] and "zod" in app.prefs["my_words"], app.prefs["my_words"]
+assert my_words.get("1.0", "end-1c") == app.prefs["my_words"]
 print("PASS")
 app.quit()

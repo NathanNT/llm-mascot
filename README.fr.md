@@ -85,7 +85,7 @@ cd llm-mascot
 </div>
 
 - **Les assistants classiques de Windows** (Clippy, Merlin, Genie, Peedy…) utilisent le format clippy.js. Ce sont des œuvres de Microsoft : elles ne sont **pas dans ce dépôt** ; téléchargez-les sur votre PC, pour votre usage : `.venv\Scripts\python tools\get_agents.py --list`, puis `... get_agents.py Clippy Merlin`.
-- **Mascottes d'IA de la communauté** (un Claude, une baleine DeepSeek, un capybara pour la mascotte de Qwen) : `tools\get_llm_mascots.py` récupère à la demande des « pets » Codex faits par des fans, avec auteurs et licences notés dans `mascots\CREDITS.txt`. Ce ne sont pas des œuvres officielles et elles ne sont jamais commitées ici.
+- **Mascottes d'IA de la communauté** (Claude et Clawd, ChatGPT, la grenouille d'OpenAI et Codex, la baleine de DeepSeek, le capybara de Qwen, Doubao, Llama, le mème du Shoggoth…, 15 au total) : `python tools\get_llm_mascots.py --list` les affiche et `--all` (ou leurs noms) récupère les « pets » Codex faits par des fans depuis les galeries [awesome-codex-pet](https://github.com/legeling/awesome-codex-pet) et [Petdex](https://petdex.dev), avec auteurs, licences et sources notés dans `mascots\CREDITS.txt`. Ce ne sont pas des œuvres officielles (aucune galerie n'a encore de pet Gemini, Kimi, Mistral ou Grok) et elles ne sont jamais commitées ici.
 - **Un chien original** est fourni, il marche avant tout téléchargement. **Vos propres** PNG, GIF ou WebP déposés dans `mascots/` marchent aussi, ainsi que les pets Codex déjà présents sur votre PC.
 - **Éditeur de mascotte** (*Personnalisation → Modifier animations et icônes…*) : choisissez l'animation jouée au repos, au survol, à l'écoute, au traitement, en cas de réussite, d'erreur et de déplacement vers la gauche ou la droite, et faites glisser la jauge, le micro et le rail où vous voulez. Enregistré par mascotte.
 
@@ -107,10 +107,13 @@ Appuyez sur **＋** pour ajouter un site (`https://chatgpt.com`), une applicatio
 |---|---|
 | **Raccourci de dictée** | Appuyez sur une nouvelle combinaison ; refusée si un autre programme la possède déjà. |
 | **Transcrire avec** | **Processeur** (privé, hors ligne), **GPU** (AMD, NVIDIA ou Intel via Vulkan), ou un service : **OpenAI**, **Groq**, ou toute adresse compatible OpenAI. Modèles de `tiny` à `large-v3` ; chacun a un bouton **Télécharger** avec une barre de progression. |
+| **Vocabulaire** | Deux listes données à Whisper comme invite initiale (aussi à OpenAI et Groq) : **Mes mots** (noms de projets et de produits, de personnes, jargon ; *Apprendre depuis un dossier…* propose les noms trouvés dans un projet : noms de dossiers et de paquets, dépendances, titres du README, noms de fichiers source, jamais le code) et **Termes techniques** (mots anglais comme *commit*, *pull request*, *build*). La reformulation doit aussi rétablir les termes anglais entendus comme des sosies français. Dans un test synthétique avec une voix française, `large-v3` est passé de 3,2 % à 0 % d'erreurs sur des termes techniques anglais, et de 9,6 % à 0 % sur des phrases pleines de noms de projets (`medium` de 21 % à 4,8 %). Vérifiez sur votre voix avec la case *Utiliser mon vocabulaire* du benchmark. |
 | **Transcription en direct** | Affiche les mots dans la bulle du micro pendant que vous parlez (GPU). |
+| **Longues dictées** | Un enregistrement peut durer jusqu'à 30 minutes. Avec le GPU il est transcrit morceau par morceau pendant que vous parlez, le texte est donc prêt un instant après l'arrêt. |
 | **Reformuler avec** | *Automatique* (Codex, sinon Claude), *Codex*, *Claude* ou *Non*. Codex reste lancé en arrière-plan, donc une reformulation prend environ 3 s ; son **mode rapide** est environ 1,5 fois plus rapide et consomme plus de crédits. |
 | **Style** | **Corrigé et clair** (principal : un prompt clair et corrigé qui formule le but et ce que doit contenir la réponse), Correction, Court et simple, Étoffé, Tâche de code, Liste à puces, Ton professionnel, Ton décontracté, ou votre propre texte. |
 | **Mémoriser les dernières dictées** | Envoie les 5 dernières dictées des 30 dernières minutes avec la suivante pour que la reformulation comprenne ce dont vous parlez. En mémoire seulement, désactivé par défaut. |
+| **Mise en veille** | Après un délai sans utilisation (5 min à 1 h) la mascotte rétrécit et reprend sa taille quand vous la survolez ; après un délai plus long (15 min à 2 h) elle se masque dans la zone de notification (la flèche à côté de l'horloge) jusqu'à un clic sur son icône ou l'appui du raccourci. Désactivé par défaut. L'icône est toujours là, sous *Afficher les icônes cachées* : un clic ramène la mascotte, un clic droit propose *Masquer / Afficher*, *Dicter*, *Personnalisation…* et *Quitter* ; *Masquer dans la zone de notification* est aussi dans le menu clic droit de la mascotte. |
 | **Lancer au démarrage · Quand le texte est prêt** | Démarrer avec Windows ; taper dans le champ ou seulement copier. |
 
 <details>
@@ -159,9 +162,11 @@ Le panneau de consommation lit du JSON **local** depuis `quotas_url`, au format 
 ```powershell
 python -m venv .venv
 .venv\Scripts\pip install -r requirements-dev.txt
-.venv\Scripts\python -m pytest -q tests            # tests unitaires, sans écran
-.venv\Scripts\python tests\gui\check_drag.py       # vérifications sur un vrai bureau (tests\gui\)
-.venv\Scripts\python tools\make_screenshots.py --lang fr --theme dark --out docs\img\fr
+.venv\Scripts\python tools\dev.py test       # tests unitaires, sans écran
+.venv\Scripts\python tools\dev.py restart    # relance la mascotte avec le code actuel
+.venv\Scripts\python tools\dev.py check      # les vérifications de bureau de tests\gui (déplace le vrai pointeur ; arrête et relance la mascotte)
+.venv\Scripts\python tools\dev.py shots      # régénère toutes les images du README (sombre, clair, Windows XP ; EN et FR)
+.venv\Scripts\python tools\dev.py ci         # tests unitaires dans un environnement propre avec les seuls paquets de la CI
 ```
 
 `rover.py` est l'application ; `ui_kit.py` dessine panneaux, icônes et contrôles XP avec Pillow ; `layered.py` gère les fenêtres à alpha par pixel ; `mascots.py`/`mascot_setup.py` les animations ; `voice.py`, `transcribe.py`, `accel.py`, `modelstore.py` la parole ; `core.py`, `codex_server.py`, `styles.py` la reformulation ; `i18n.py` les textes anglais d'origine et la traduction française (un test vérifie que chaque texte en a une). Voir [`CONTRIBUTING.md`](CONTRIBUTING.md).

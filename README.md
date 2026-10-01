@@ -85,7 +85,7 @@ cd llm-mascot
 </div>
 
 - **Classic Windows assistants** (Clippy, Merlin, Genie, Peedy…) use the clippy.js format. They are Microsoft's artwork, so they are **not in this repository**; download them onto your own PC for your own use: `.venv\Scripts\python tools\get_agents.py --list`, then `... get_agents.py Clippy Merlin`.
-- **AI mascots from the community** (a Claude, a DeepSeek whale, a capybara for Qwen's mascot): `tools\get_llm_mascots.py` fetches fan-made Codex "pets" on request, with their authors and licences written to `mascots\CREDITS.txt`. They are not official artwork and are never committed here.
+- **AI mascots from the community** (Claude and Clawd, ChatGPT, OpenAI's frog and Codex, DeepSeek's whale, Qwen's capybara, Doubao, Llama, the Shoggoth meme…, 15 in all): `python tools\get_llm_mascots.py --list` shows them and `--all` (or their names) fetches the fan-made Codex "pets" from the [awesome-codex-pet](https://github.com/legeling/awesome-codex-pet) and [Petdex](https://petdex.dev) galleries, with their authors, licences and sources written to `mascots\CREDITS.txt`. They are not official artwork (no gallery has a Gemini, Kimi, Mistral or Grok pet yet) and are never committed here.
 - **A bundled original dog** works before you download anything. **Your own** PNG, GIF or WebP dropped in `mascots/` works too, and so do Codex pets already on your PC.
 - **Mascot editor** (*Customize → Edit animations and icons…*): choose which animation plays for resting, hover, listening, processing, success, error and dragging left or right, and drag the gauge, the microphone and the shortcut rail where you like. Saved per mascot.
 
@@ -107,10 +107,13 @@ Press **＋** to add a website (`https://chatgpt.com`), a local app (`http://loc
 |---|---|
 | **Dictation shortcut** | Press a new combination; refused if another program already owns it. |
 | **Transcribe with** | **CPU** (private, offline), **GPU** (AMD, NVIDIA or Intel through Vulkan), or a service: **OpenAI**, **Groq**, or any OpenAI-compatible address. Models from `tiny` to `large-v3`; each has a **Download** button with a progress bar. |
+| **Vocabulary** | Two lists given to Whisper as an initial prompt (also to OpenAI and Groq): **My words** (project and product names, people, jargon; *Learn from a folder…* proposes the names it finds in a project: folder and package names, dependencies, README titles, source file names, never the code) and **Technical terms** (English words such as *commit*, *pull request*, *build*). The rewrite is also told to restore English terms heard as French look-alikes. In a synthetic test with a French voice, `large-v3` went from 3.2 % to 0 % errors on English technical terms, and from 9.6 % to 0 % on sentences full of project names (`medium` from 21 % to 4.8 %). Check it on your own voice with the benchmark's *Use my vocabulary* box. |
 | **Live transcription** | Shows the words in the microphone bubble as you speak (GPU). |
+| **Long dictations** | A recording can last up to 30 minutes. With the GPU it is transcribed piece by piece while you talk, so the text is ready a moment after you stop. |
 | **Rewrite with** | *Automatic* (Codex, else Claude), *Codex*, *Claude* or *Off*. Codex stays running in the background, so a rewrite takes about 3 s; its **Fast mode** option is about 1.5× quicker and uses more credits. |
 | **Style** | **Correct and clear** (main: a clear, corrected prompt that states the goal and what the answer must contain), Proofread, Short and simple, Detailed, Coding task, Bullet points, Professional, Casual, or your own text. |
 | **Remember recent dictations** | Sends the last 5 dictations of the past 30 minutes with the next one so the rewrite understands what you refer to. Memory only, off by default. |
+| **Standby** | After a delay without use (5 min to 1 h) the mascot shrinks and grows back when you hover it; after a longer one (15 min to 2 h) it hides in the notification area (the arrow next to the clock) until you click its icon or press the shortcut. Off by default. The icon is always there under *Show hidden icons*: click it to bring the mascot back, right-click for *Hide / Show*, *Dictate*, *Customize…* and *Quit*; *Hide in the notification area* is also in the mascot's right-click menu. |
 | **Launch at startup · When text is ready** | Start with Windows; type into the field or only copy. |
 
 <details>
@@ -159,9 +162,11 @@ The usage panel reads **local** JSON from `quotas_url` in the shape of Codex's r
 ```powershell
 python -m venv .venv
 .venv\Scripts\pip install -r requirements-dev.txt
-.venv\Scripts\python -m pytest -q tests            # unit tests, no display needed
-.venv\Scripts\python tests\gui\check_drag.py       # checks that need a real desktop (tests\gui\)
-.venv\Scripts\python tools\make_screenshots.py --lang en --theme dark --out docs\img\en
+.venv\Scripts\python tools\dev.py test       # unit tests, no display needed
+.venv\Scripts\python tools\dev.py restart    # restart the mascot with the current code
+.venv\Scripts\python tools\dev.py check      # the desktop checks of tests\gui (moves the real pointer; stops and restarts the mascot)
+.venv\Scripts\python tools\dev.py shots      # regenerate every README picture (dark, light, Windows XP; EN and FR)
+.venv\Scripts\python tools\dev.py ci         # unit tests in a clean environment with only the CI's packages
 ```
 
 `rover.py` is the application; `ui_kit.py` draws panels, icons and the XP controls with Pillow; `layered.py` handles per-pixel-alpha windows; `mascots.py`/`mascot_setup.py` the animations; `voice.py`, `transcribe.py`, `accel.py`, `modelstore.py` speech; `core.py`, `codex_server.py`, `styles.py` the rewrite; `i18n.py` the English source strings and the French translation (a test checks every string has one). See [`CONTRIBUTING.md`](CONTRIBUTING.md).

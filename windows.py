@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import ctypes
 import os
+import queue
+import threading
 import time
 from ctypes import wintypes
 
@@ -120,10 +122,67 @@ def is_own_window(hwnd: int) -> bool:
     return pid.value == os.getpid()
 
 
+class _HotkeyListener:
+    """The system-wide shortcut lives on a thread of its own that does nothing but wait for it.
+
+    A hotkey is delivered to the thread that registered it, and Tk's main loop throws away messages that belong to no window,
+    so on the main thread the shortcut was lost before the app could look at it. Here a plain message loop receives it."""
+
+    COMMAND = 0x8000 + 20          # WM_APP + 20: "register or unregister", queued in `commands`
+
+    def __init__(self):
+        self.commands: queue.Queue = queue.Queue()
+        self.replies: queue.Queue = queue.Queue()
+        self.fired: queue.Queue = queue.Queue()
+        self.thread_id = 0
+        self.thread: threading.Thread | None = None
+        self.ready = threading.Event()
+        self.lock = threading.Lock()
+        self.user32 = ctypes.WinDLL("user32", use_last_error=True)
+        self.user32.GetMessageW.argtypes = (ctypes.POINTER(wintypes.MSG), wintypes.HWND, wintypes.UINT, wintypes.UINT)
+        self.user32.PeekMessageW.argtypes = (ctypes.POINTER(wintypes.MSG), wintypes.HWND, wintypes.UINT, wintypes.UINT, wintypes.UINT)
+        self.user32.PostThreadMessageW.argtypes = (wintypes.DWORD, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM)
+        self.user32.RegisterHotKey.argtypes = (wintypes.HWND, ctypes.c_int, wintypes.UINT, wintypes.UINT)
+        self.user32.UnregisterHotKey.argtypes = (wintypes.HWND, ctypes.c_int)
+
+    def _run(self) -> None:
+        self.thread_id = ctypes.windll.kernel32.GetCurrentThreadId()
+        message = wintypes.MSG()
+        self.user32.PeekMessageW(ctypes.byref(message), None, 0x400, 0x400, 0)       # creates this thread's message queue
+        self.ready.set()
+        while self.user32.GetMessageW(ctypes.byref(message), None, 0, 0) > 0:
+            if message.message == WM_HOTKEY:
+                self.fired.put(message.wParam)
+            elif message.message == self.COMMAND:
+                kind, hotkey_id, modifiers, key = self.commands.get()
+                if kind == "register":
+                    self.replies.put(bool(self.user32.RegisterHotKey(None, hotkey_id, modifiers, key)))
+                else:
+                    self.user32.UnregisterHotKey(None, hotkey_id)
+                    self.replies.put(True)
+
+    def call(self, kind: str, hotkey_id: int = 1, modifiers: int = 0, key: int = 0) -> bool:
+        with self.lock:
+            if self.thread is None or not self.thread.is_alive():
+                self.ready.clear()
+                self.thread = threading.Thread(target=self._run, daemon=True)
+                self.thread.start()
+                self.ready.wait(3)
+            self.commands.put((kind, hotkey_id, modifiers, key))
+            self.user32.PostThreadMessageW(self.thread_id, self.COMMAND, 0, 0)
+            try:
+                return self.replies.get(timeout=3)
+            except queue.Empty:
+                return False
+
+
+_listener = _HotkeyListener()
+
+
 def register_hotkey(spec: str = hotkeys.DEFAULT, hotkey_id: int = 1) -> bool:
     """Claim the shortcut system-wide; False when it is unusable or another program already owns it."""
     parsed = hotkeys.parse(spec)
-    return bool(parsed and user32.RegisterHotKey(None, hotkey_id, parsed[0] | MOD_NOREPEAT, parsed[1]))
+    return bool(parsed) and _listener.call("register", hotkey_id, parsed[0] | MOD_NOREPEAT, parsed[1])
 
 
 def pressed_modifiers() -> set[str]:
@@ -136,15 +195,17 @@ def pressed_modifiers() -> set[str]:
 
 
 def unregister_hotkey(hotkey_id: int = 1) -> None:
-    user32.UnregisterHotKey(None, hotkey_id)
+    _listener.call("unregister", hotkey_id)
 
 
 def consume_hotkey(hotkey_id: int = 1) -> bool:
-    message = wintypes.MSG()
+    """True if the shortcut was pressed since the last call."""
     fired = False
-    while user32.PeekMessageW(ctypes.byref(message), None, WM_HOTKEY, WM_HOTKEY, PM_REMOVE):
-        fired = fired or message.wParam == hotkey_id
-    return fired
+    while True:
+        try:
+            fired = _listener.fired.get_nowait() == hotkey_id or fired
+        except queue.Empty:
+            return fired
 
 
 VK_SHIFT, VK_CONTROL, VK_MENU, VK_RETURN = 0x10, 0x11, 0x12, 0x0D

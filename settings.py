@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 
 import mascot_setup
+import vocab
 from hotkeys import parse as windows_free_parse
 import styles
 from i18n import system_language
@@ -29,6 +30,8 @@ WHISPER_MODELS = (   # (name, download size, character) – the speech model run
     ("medium", "≈1.5 GB", "Accurate, slower on a CPU"),
     ("large-v3", "≈3 GB", "Best accuracy, heavy"),
 )
+SHRINK_CHOICES = (0, 5, 15, 30, 60)         # minutes
+HIDE_CHOICES = (0, 15, 30, 60, 120)
 REWRITE_PROVIDERS = ("auto", "codex", "claude", "off")
 SIZE_PRESETS = (("Small", 64), ("Medium", 96), ("Large", 128), ("Extra large", 160))
 IMAGE_SUFFIXES = (".png", ".gif", ".webp")
@@ -56,6 +59,10 @@ DEFAULTS: dict = {
     "keep_context": False,          # send the last few dictations along with the next one, for the rewrite
     "live_transcript": True,        # show the words as you speak (GPU only)
     "hotkey": "ctrl+alt+r",         # start / stop the dictation from anywhere
+    "idle_shrink": 0,               # minutes without use before the mascot shrinks (0 = never)
+    "idle_hide": 0,                 # minutes without use before it hides in the notification area (0 = never)
+    "my_words": "",                      # your own words: project and product names…, first in the speech prompt
+    "vocabulary": vocab.DEFAULT_TERMS,   # words the speech model should expect (English terms in French sentences…)
     "startup": None,              # start with Windows; None = not decided in this session
     "quotas_url": "",       # optional local JSON service; see README
     "codex": {"home": "", "model": "", "reasoning": "low", "auth_store": "", "tier": ""},     # tier "priority" = Codex Fast mode
@@ -108,6 +115,13 @@ def load() -> dict:
         if isinstance(stored.get(key), str):
             data[key] = stored[key][:4000]
     data["rewrite_style"] = styles.RETIRED.get(data["rewrite_style"], data["rewrite_style"])
+    if isinstance(stored.get("my_words"), str):
+        data["my_words"] = stored["my_words"][:1500]
+    if isinstance(stored.get("vocabulary"), str):
+        data["vocabulary"] = stored["vocabulary"][:1500]
+    for key, allowed in (("idle_shrink", SHRINK_CHOICES), ("idle_hide", HIDE_CHOICES)):
+        if stored.get(key) in allowed and not isinstance(stored.get(key), bool):
+            data[key] = stored[key]
     for key in ("keep_context", "live_transcript"):
         if isinstance(stored.get(key), bool):
             data[key] = stored[key]

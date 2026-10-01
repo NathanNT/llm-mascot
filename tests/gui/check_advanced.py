@@ -52,7 +52,7 @@ def label_click(text):
 
 
 def text_box():
-    return next(w for w in widgets() if isinstance(w, tk.Text))
+    return max((w for w in widgets() if isinstance(w, tk.Text)), key=lambda w: int(w.cget("height")))      # the style box, not the vocabulary one
 
 
 def click(text):

@@ -241,12 +241,13 @@ class Server:
             self._stop_locked()
             raise AccelError(tr("The GPU speech server did not start in time"))
 
-    def transcribe(self, audio: np.ndarray, language: str, model: str) -> str:
+    def transcribe(self, audio: np.ndarray, language: str, model: str, prompt: str = "") -> str:
         self.ensure(model)
         try:
             response = requests.post(f"http://127.0.0.1:{self.port}/inference",
                                      files={"file": ("dictation.wav", transcribe.wav_bytes(audio), "audio/wav")},
-                                     data={"response_format": "json", "language": language, "temperature": "0.0"}, timeout=(5, 90))
+                                     data={"response_format": "json", "language": language, "temperature": "0.0", **({"prompt": prompt} if prompt else {})},
+                                     timeout=(5, 90))
             response.raise_for_status()
             return str(response.json().get("text", "")).strip()
         except (requests.RequestException, ValueError) as exc:
@@ -281,8 +282,8 @@ def looks_degenerate(text: str, seconds: float) -> bool:
     return len(raw) > 80 and len(raw) / len(zlib.compress(raw)) > 2.4
 
 
-def transcribe_gpu(audio: np.ndarray, language: str, model: str) -> str:
-    text = " ".join(part for part in (server.transcribe(piece, language, model) for piece in transcribe.split_audio(audio)) if part).strip()
+def transcribe_gpu(audio: np.ndarray, language: str, model: str, prompt: str = "") -> str:
+    text = " ".join(part for part in (server.transcribe(piece, language, model, prompt) for piece in transcribe.split_audio(audio)) if part).strip()
     if not text:
         raise AccelError(tr("No speech recognised"))
     if looks_degenerate(text, len(audio) / transcribe.SAMPLE_RATE):

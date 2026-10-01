@@ -176,7 +176,7 @@ def test_gpu_failures_fall_back_to_the_cpu_model(monkeypatch):
     assert transcribe.run(silence, "en", {"engine": "gpu", "whisper_model": "base"}, local, fallback=True) == "cpu text"
     with pytest.raises(transcribe.TranscribeError):
         transcribe.run(silence, "en", {"engine": "gpu", "whisper_model": "base"}, local, fallback=False)
-    monkeypatch.setattr(accel, "transcribe_gpu", lambda audio, language, model: f"gpu text ({model})")
+    monkeypatch.setattr(accel, "transcribe_gpu", lambda audio, language, model, prompt="": f"gpu text ({model})")
     assert transcribe.run(silence, "fr", {"engine": "gpu", "whisper_model": "small"}, local, fallback=True) == "gpu text (small)"
 
 
@@ -189,7 +189,7 @@ def test_repetition_loops_are_detected_but_normal_speech_is_not():
 
 
 def test_a_looping_gpu_answer_falls_back_to_the_cpu_model(monkeypatch):
-    monkeypatch.setattr(accel.server, "transcribe", lambda audio, language, model: "la la la " * 80)
+    monkeypatch.setattr(accel.server, "transcribe", lambda audio, language, model, prompt="": "la la la " * 80)
     silence = np.zeros(16000, dtype=np.float32)
     with pytest.raises(accel.AccelError):
         accel.transcribe_gpu(silence, "fr", "tiny")
