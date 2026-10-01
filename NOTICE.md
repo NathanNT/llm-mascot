@@ -18,6 +18,7 @@ LLM Mascot is released under the MIT License (see `LICENSE`). It builds on the f
 | Whisper model weights (`Systran/faster-whisper-*`) | MIT | Downloaded at the first dictation into `models/` |
 | GPU speech runtime (`whisper-server.exe`) | whisper.cpp, MIT | Built from source by this project's GitHub Actions (the Vulkan SDK is used at build time only, not shipped); downloaded only when you press "Set up GPU acceleration" |
 | GGML model files (`ggerganov/whisper.cpp` on Hugging Face) | MIT | Downloaded only when you press "Set up GPU acceleration" |
+| Community mascots of AI models (optional, `tools/get_llm_mascots.py`) | Set by each author (several are non-commercial) | Not included here: downloaded onto your PC only when you run the tool, with authors and licences written to `mascots/CREDITS.txt` |
 | Microsoft Agent characters (Clippy, Merlin, Genie…) | © Microsoft | **Not distributed here.** `tools/get_agents.py` downloads them from [clippyjs/clippy.js](https://github.com/clippyjs/clippy.js) onto your own machine after you confirm. The project screenshots show Clippy only to illustrate compatibility. |
 | Codex pets | © OpenAI | Read in place from an installed Codex extension; never copied or redistributed. |
 

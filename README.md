@@ -2,9 +2,9 @@
 
 # 🐶 LLM Mascot
 
-**A tiny desktop companion for Windows that shows how much of your AI quota is left and types what you say.**
+**A small desktop companion for Windows that shows what is left of your AI quota and types what you say.**
 
-Talk to it, it transcribes on your PC, optionally polishes the text with Codex, and drops the result into the field you were typing in — never pressing Enter for you.
+Talk to it: it transcribes on your PC, optionally polishes the text with Codex or Claude, and drops the result into the field you were typing in. It never presses Enter for you.
 
 [![CI](https://github.com/NathanNT/llm-mascot/actions/workflows/ci.yml/badge.svg)](https://github.com/NathanNT/llm-mascot/actions/workflows/ci.yml)
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-0078d4)
@@ -20,24 +20,20 @@ Talk to it, it transcribes on your PC, optionally polishes the text with Codex, 
 
 </div>
 
----
+## What it does
 
-## ✨ What you get
+- **Dictation anywhere.** Click the mascot or press a shortcut (**Ctrl+Alt+R** by default, changeable), speak, click again. French and English, transcribed locally ([faster-whisper](https://github.com/SYSTRAN/faster-whisper)) or on your graphics card.
+- **Inserted, never sent.** The text is typed at the caret of the field that had focus: no clipboard, no Enter key.
+- **Rewrite in your style.** Codex or Claude can turn the dictation into a clear, corrected prompt, proofread it, shorten it and more (8 styles, or your own).
+- **Usage at a glance.** Hover the gauge for your Codex usage windows and credits.
+- **Shortcut rail.** Claude, ChatGPT and anything you add; hover a logo to open a new chat in the desktop app, VS Code, a terminal or the browser.
+- **A real personality.** Each mascot reacts: waves, listens, thinks, celebrates, collapses on errors. The **mascot editor** lets you pick the animation for each event and move the icons.
+- **Three looks:** dark, warm light, and a faithful **Windows XP**.
+- **Private by default.** Audio stays on your PC, nothing is written to disk, no telemetry.
 
-| Feature | Details |
-|---|---|
-| **Dictation anywhere** | Click the mascot or press **Ctrl+Alt+R**, speak, click again. French and English, transcribed **locally** with [faster-whisper](https://github.com/SYSTRAN/faster-whisper). |
-| **Inserted, never sent** | The text is typed into the field that had focus (no clipboard, no Enter key). If you switched windows, a button lets you insert it later. |
-| **Optional rewrite, your style** | Codex or Claude can clean up, proofread, shorten, expand or restructure what you said, using a preset style or your own instruction. Without either, the raw text is inserted. |
-| **Usage at a glance** | Hover the gauge to see Codex usage windows, reset times and credits. Claude shows a one-click link to its usage page — no invented numbers. |
-| **AI shortcut rail** | Round buttons for Claude, ChatGPT and **anything you add**: a website, a local web app, a program, a folder. Icons are fetched automatically. |
-| **Real personality** | Nine reactions per mascot: it waves when you arrive, listens while you talk, reads while it thinks, jumps on success, collapses on errors, runs while you drag it. |
-| **Make it yours** | Change mascot, size, theme (dark / warm light), side of the rail and language (English / Français) from a built-in settings window. |
-| **Private by design** | Audio never leaves your PC, nothing is stored on disk, no telemetry. |
+## Install
 
-## 🚀 Install in one minute
-
-**Requirements:** Windows 10 or 11, [Python 3.10+](https://www.python.org/downloads/) (`winget install Python.Python.3.12`), a microphone.
+Requirements: Windows 10 or 11, [Python 3.10+](https://www.python.org/downloads/), a microphone.
 
 ```powershell
 git clone https://github.com/NathanNT/llm-mascot.git
@@ -45,232 +41,118 @@ cd llm-mascot
 .\install.bat
 ```
 
-Or download the ZIP from GitHub, extract it and double-click **`install.bat`**. It creates a private environment, installs the dependencies, adds a desktop shortcut and starts the mascot.
+(or download the ZIP and double-click `install.bat`). It creates a private environment, installs the dependencies, adds a desktop shortcut and starts the mascot. `.\install.ps1 -Startup` also starts it with Windows, `-DownloadModel` fetches the speech model now (≈150 MB, otherwise at the first dictation), `.\uninstall.ps1` removes the shortcuts.
 
-| Option | What it does |
-|---|---|
-| `.\install.ps1 -Startup` | Also start the mascot when Windows starts |
-| `.\install.ps1 -DownloadModel` | Download the speech model now (≈150 MB) instead of at the first dictation |
-| `.\uninstall.ps1` | Remove the shortcuts |
-| `run.bat` | Start it by hand |
+## Use it
 
-> The speech model is downloaded once, the first time you dictate. After that everything works offline.
-
-## How to use it
-
-1. **Hover the mascot** – it waves and reveals two round buttons and the shortcut rail.
-2. **Hover the gauge** (above) to open the **usage** panel. **Hover the microphone** (below) to open the **dictation** panel.
-3. **Click in any text field**, then click the mascot (or press **Ctrl+Alt+R**), speak, and click again.
-4. The text appears at the caret, after whatever you had already typed. Nothing is sent: you press Enter yourself. Line breaks are typed as Shift+Enter.
-5. **Drag** the mascot anywhere; every panel follows it. **Right-click** for the menu.
+1. **Hover the mascot**: it waves and shows two round buttons and the shortcut rail.
+2. **Hover the gauge** (above) for usage, **the microphone** (below) for the dictation panel.
+3. Click in any text field, click the mascot (or press the shortcut), speak, click again. The text appears at the caret.
+4. **Drag** the mascot anywhere, panels follow. **Right-click** for the menu.
 
 <div align="center">
 <img src="docs/img/en/states.png" alt="The five dictation states: ready, listening, processing, text ready, error">
-<br><sub>Ready · Listening (live microphone level) · Processing · Text ready to insert · Error with retry</sub>
+<br><sub>Ready · Listening · Processing · Text ready · Error with retry</sub>
 </div>
 
-## 🎭 Mascots
+## Looks
 
 <div align="center">
-<img src="docs/img/en/mascots.png" alt="The classic Windows assistants: Clippy, Merlin, Genie, Rocky, Peedy, F1, Genius and Rover XP" width="760">
+<img src="docs/img/en/hero.png" alt="Dark theme" width="230">
+<img src="docs/img/en-light/hero.png" alt="Light theme" width="230">
+<img src="docs/img/en-xp/hero.png" alt="Windows XP theme" width="230">
+<br><sub>Dark · Warm light · Windows XP</sub>
 </div>
 
-The classic animated Windows assistants work out of the box, each with dozens of animations. Here they are at work while the app transcribes and rewrites a dictation:
+### Windows XP
+
+*Customize → Theme → Windows XP* dresses the whole app like the original system: Luna title bars with rounded corners, beige windows, radio buttons, white text boxes, the sunken trackbar, push buttons that glow orange under the pointer, green progress blocks, the glossy blue and red microphone orb, and the shortcut rail drawn as the MS Paint toolbox, with its menu unrolling as a toolbar.
 
 <div align="center">
-<img src="docs/img/en/characters.png" alt="Clippy, Merlin, Genie, Peedy and F1 playing their processing animations" width="100%">
+<img src="docs/img/en-xp/settings.png" alt="Customization window in Windows XP style" width="600">
+<br>
+<img src="docs/img/en-xp/advanced.png" alt="Advanced settings in Windows XP style" width="600">
+<br>
+<img src="docs/img/en-xp/states.png" alt="Dictation bubble states in Windows XP style" width="100%">
+<br>
+<img src="docs/img/en-xp/editor.png" alt="Mascot editor in Windows XP style" width="600">
 </div>
 
-- **Clippy, Merlin, Genie, Rocky, Peedy, F1, Genius, Rover XP…** use the clippy.js format. They are Microsoft's artwork, so they are **not included** in this repository; download them onto your own machine, for your own use, with:
-  ```powershell
-  .venv\Scripts\python tools\get_agents.py --list
-  .venv\Scripts\python tools\get_agents.py Clippy Merlin Genie
-  ```
-  They receive the same events as every mascot (greeting, listening, processing, congratulation, alert…) and play their idle animations at random.
-- **A bundled fallback** – a simple original dog (nine reactions) so the app works before you download anything.
-- **Your own images** – PNG, GIF or WebP dropped in `mascots/` (or imported from the settings window). A 1536 × 1872 PNG laid out like the atlas below plays all nine reactions.
-- **Codex pets** – if the Codex extension is installed, its pets appear automatically in the settings window and play the same nine reactions (they are read in place, never copied).
+## Mascots
+
+<div align="center">
+<img src="docs/img/en/mascots.png" alt="Clippy, Merlin, Genie, Rocky, Peedy, F1, Genius and Rover XP" width="720">
+</div>
+
+- **Classic Windows assistants** (Clippy, Merlin, Genie, Peedy…) use the clippy.js format. They are Microsoft's artwork, so they are **not in this repository**; download them onto your own PC for your own use: `.venv\Scripts\python tools\get_agents.py --list`, then `... get_agents.py Clippy Merlin`.
+- **AI mascots from the community** (a Claude, a DeepSeek whale, a capybara for Qwen's mascot): `tools\get_llm_mascots.py` fetches fan-made Codex "pets" on request, with their authors and licences written to `mascots\CREDITS.txt`. They are not official artwork and are never committed here.
+- **A bundled original dog** works before you download anything. **Your own** PNG, GIF or WebP dropped in `mascots/` works too, and so do Codex pets already on your PC.
+- **Mascot editor** (*Customize → Edit animations and icons…*): choose which animation plays for resting, hover, listening, processing, success, error and dragging left or right, and drag the gauge, the microphone and the shortcut rail where you like. Saved per mascot.
 
 <details>
-<summary><b>Sprite atlas layout</b> (for creating your own mascot)</summary>
+<summary>Sprite atlas layout, to draw your own mascot</summary>
 
-An atlas is a transparent PNG of **8 columns × 9 rows of 192 × 208 px cells** (1536 × 1872). Unused cells stay empty.
-
-| Row | Clip | Frames | Played when |
-|---|---|---|---|
-| 0 | idle | 6 | resting (loops) |
-| 1 | run right | 8 | dragging to the right |
-| 2 | run left | 8 | dragging to the left |
-| 3 | wave | 4 | you hover the mascot |
-| 4 | jump | 5 | text is ready or inserted |
-| 5 | fail | 8 | an error occurred |
-| 6 | wait | 6 | listening (loops) |
-| 7 | sniff | 6 | spare clip |
-| 8 | read | 6 | processing (loops) |
-
-`python tools/make_default_mascot.py` regenerates the bundled atlas and is a good starting point.
+A transparent PNG of **8 columns × 9 rows of 192 × 208 px cells** (1536 × 1872); unused cells stay empty. Rows: idle · run right · run left · wave (hover) · jump (success) · fail (error) · wait (listening) · spare · read (processing). `python tools/make_default_mascot.py` regenerates the bundled one and is a good starting point.
 </details>
 
 ## Shortcut rail
 
-The rail on the side of the mascot opens your AI tools in one click. Press **＋** (or use *Customize → Shortcuts*) and enter:
+Press **＋** to add a website (`https://chatgpt.com`), a local app (`http://localhost:3000`), a program or a folder; its icon is fetched automatically (up to eight). **Hover the Claude or ChatGPT logo** and a row of round buttons unrolls from it, one per way to start a chat that is installed on your PC (VS Code or Cursor extension, terminal, default browser), each marked with the icon of the program it opens; clicking the logo itself opens the desktop app when there is one.
 
-- a website: `https://chatgpt.com`
-- a local web app: `http://localhost:3000`
-- a program or shortcut: `C:\Program Files\App\app.exe`, a `.lnk`, a folder
+## Settings
 
-The icon is the site's favicon or the file's Windows icon. Right-click a button to open or remove it. Up to eight shortcuts.
-
-<div align="center">
-<img src="docs/img/en/settings.png" alt="The customization window" width="640">
-</div>
-
-<div align="center">
-Dark by default, with a warm light theme:<br>
-<img src="docs/img/en-light/hero.png" alt="Light theme" width="240">
-</div>
-
-## Advanced settings
-
-*Customize → Advanced settings* groups the options that change how dictation behaves.
-
-<div align="center">
-<img src="docs/img/en/advanced.png" alt="The advanced settings page" width="720">
-</div>
+*Customize → Advanced settings* (screenshots above):
 
 | Setting | What it does |
 |---|---|
-| **Launch at Windows startup** | Starts the mascot when you sign in (a per-user entry, no admin rights). Applied when you press *Save*. |
-| **When the text is ready** | *Type into the field* (default) or *Copy only* to the clipboard. |
-| **Transcribe with** | *CPU* (default, private, offline), *GPU* (your graphics card, see below) or an external service: **OpenAI** (`gpt-4o-mini-transcribe`, the fast and cheap one), **Groq** (`whisper-large-v3-turbo`, very fast, free tier) or **Other** (any OpenAI-compatible address). If the service is unreachable or out of credit, the local model takes over when it is installed. |
-| **Speech model** (CPU, GPU) | `tiny` (≈75 MB) to `large-v3` (≈3 GB). **`base` (★) is the fast default**, loaded in the background at start-up so the first dictation answers at once. For technical vocabulary, `turbo` or an external service is usually much more accurate: measure it with the benchmark. A model is downloaded once, the first time it is used. |
-| **Rewrite with** | *Automatic* (Codex if available, else Claude), *Codex*, *Claude*, or *Off* to always insert the raw transcript. |
-| **Codex / Claude model** | The model each tool uses. Empty means the tool's own default; for Claude you can type an alias such as `sonnet`, `opus` or `haiku`, or a full model name. |
-| **Transcription style** | The editing instruction sent with your dictation. Choose a preset or write your own. |
+| **Dictation shortcut** | Press a new combination; refused if another program already owns it. |
+| **Transcribe with** | **CPU** (private, offline), **GPU** (AMD, NVIDIA or Intel through Vulkan), or a service: **OpenAI**, **Groq**, or any OpenAI-compatible address. Models from `tiny` to `large-v3`; each has a **Download** button with a progress bar. |
+| **Live transcription** | Shows the words in the microphone bubble as you speak (GPU). |
+| **Rewrite with** | *Automatic* (Codex, else Claude), *Codex*, *Claude* or *Off*. Codex stays running in the background, so a rewrite takes about 3 s; its **Fast mode** option is about 1.5× quicker and uses more credits. |
+| **Style** | **Correct and clear** (main: a clear, corrected prompt that states the goal and what the answer must contain), Proofread, Short and simple, Detailed, Coding task, Bullet points, Professional, Casual, or your own text. |
+| **Remember recent dictations** | Sends the last 5 dictations of the past 30 minutes with the next one so the rewrite understands what you refer to. Memory only, off by default. |
+| **Launch at startup · When text is ready** | Start with Windows; type into the field or only copy. |
 
-The styles: **Clean-up** (hesitations and punctuation, your own words), **Proofread** (spelling and grammar only, nothing else changes), **Short and simple**, **Detailed** (spells out what is implied, never invents), **AI-ready prompt**, **Coding task**, **Bullet points**, **Professional tone**, **Casual tone**, and **Custom**. Edit the text of any preset and it becomes *Custom*.
+<details>
+<summary><b>GPU speech recognition</b></summary>
 
-<div align="center">
-<img src="docs/img/en/advanced-service.png" alt="Choosing an external transcription service" width="640">
-</div>
+*Transcribe with → GPU* runs whisper.cpp with the **Vulkan** backend, so it works on AMD, NVIDIA and Intel alike. The page detects your card and driver, then one button downloads the runtime (18 MB, built from whisper.cpp's public source by this repository's [GitHub Actions](.github/workflows/whisper-runtime.yml), SHA-256 pinned in `runtime_manifest.json` and checked before anything runs) and your model from [Hugging Face](https://huggingface.co/ggerganov/whisper.cpp) (checked against its checksum). The server keeps the model loaded on the GPU, starts and stops with the app, and the CPU model takes over if anything fails. In our tests on an AMD RX 6600 XT, `turbo` answered about twice as fast as on the CPU with the same accuracy, and short dictations in under a second.
+</details>
 
-#### Run the speech model on your graphics card
+<details>
+<summary><b>External transcription: API key, not your ChatGPT login</b></summary>
 
-*Transcribe with → GPU* uses whisper.cpp with the **Vulkan** backend, so it works on **AMD, NVIDIA and Intel** cards alike (the usual CUDA route is NVIDIA-only). The page detects your card and its driver, then one button sets everything up:
-
-<div align="center">
-<img src="docs/img/en/advanced-gpu.png" alt="GPU acceleration panel with the detected graphics card" width="640">
-</div>
-
-- **Detection**: your adapter (AMD / NVIDIA / Intel) and whether its driver exposes Vulkan. If not, *Open the driver page* takes you to the vendor's download page; installing a graphics driver needs your administrator approval, so the app never does it silently.
-- **Set up GPU acceleration** downloads two things, only when you press the button: the speech runtime (18 MB, `whisper-server.exe`, **built from whisper.cpp's public source by this repository's [GitHub Actions](.github/workflows/whisper-runtime.yml)** and published as a release; its SHA-256 is pinned in `runtime_manifest.json` and checked before anything is unpacked or run), and the model you selected from the [whisper.cpp repository on Hugging Face](https://huggingface.co/ggerganov/whisper.cpp) (base ≈148 MB, turbo ≈574 MB…; checked against Hugging Face's own checksum).
-- **It stays fast**: the server keeps the model loaded on the GPU, starts in the background with the app, and is stopped with it (it cannot outlive the app). If anything goes wrong the CPU model takes over when it is installed.
-- **Test the GPU** reports the model load time and the answer time; the [benchmark](#benchmark-your-own-words) lists GPU models next to CPU ones so you can compare on your own voice.
-
-#### An external transcriber: API key, not your ChatGPT login
-
-OpenAI's and Groq's speech APIs are paid or metered **per API key**. A ChatGPT or Codex sign-in does not include them, so there is no way to spend your subscription credits on transcription; the app does not read your ChatGPT/Codex login for this. Create a key on the provider's site, paste it in *API key* and press *Save key*: it is encrypted for your Windows account (DPAPI) and never written to `settings.json` in clear text. Alternatively set the `OPENAI_API_KEY` / `GROQ_API_KEY` environment variable. *Test* checks the key without spending anything. When you pick a service, **the recording is sent to it**.
-
-For speed, leave the defaults: `gpt-4o-mini-transcribe` (OpenAI) or `whisper-large-v3-turbo` (Groq) are the small, fast models, and dictation is an easy task for them. The local `base` model is the private alternative.
-
-#### Why the "AI-ready prompt" and "Coding task" styles look the way they do
-
-They follow what Anthropic's and OpenAI's prompting guides agree on: be clear and direct, put the task first, add the context and the reason, list concrete requirements, say what to do rather than what to avoid, state the output format, keep names and identifiers exact, and never pad. The styles turn a rambling dictation into exactly that shape without inventing anything. Sources: [Claude prompting best practices](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices) and [OpenAI prompt engineering](https://developers.openai.com/api/docs/guides/prompt-engineering).
-
-Claude is used through [Claude Code](https://docs.claude.com/en/docs/claude-code) in print mode with every tool disabled and no saved session, so it only ever rewrites text.
+OpenAI's and Groq's speech APIs are billed per API key; a ChatGPT or Codex sign-in does not include them and the app never reads it for this. Paste a key in *API key*: it is encrypted for your Windows account (DPAPI) and never written to `settings.json` in clear text (or use `OPENAI_API_KEY` / `GROQ_API_KEY`). With a service selected, **the recording is sent to it**; if it is unreachable, the local model takes over.
+</details>
 
 ## Benchmark your own words
 
-Which model is best depends on *your* vocabulary. The benchmark answers that in a minute: type the text you will read, record yourself reading it once, tick the models, and every one of them transcribes **that same recording**. Each is scored against your text (word errors, substitutions, deletions, insertions) and timed, and you see exactly which words went wrong.
+Which model is best depends on your vocabulary. Read a text you typed once, tick the models, and each transcribes **that same recording**: you get word errors, wait time and exactly which words went wrong, with the most accurate, the fastest and the best balance named.
 
 <div align="center">
-<img src="docs/img/en/benchmark.png" alt="The benchmark window comparing two speech models" width="760">
+<img src="docs/img/en/benchmark.png" alt="The benchmark window comparing speech models" width="680">
 </div>
 
-- Open it from *Customize → Advanced settings → Benchmark the models…* or from the mascot's right-click menu.
-- Models that are not installed show their download size and are unticked; services (OpenAI, Groq) appear when a key is set and run in parallel with the local models. Nothing is sent anywhere unless you tick a service.
-- The summary names the **most accurate**, the **fastest**, and the **best balance** (the fastest model within 2 points of the most accurate one). Timing excludes the one-off model load, which is reported separately.
-- *Copy results* puts a Markdown table on the clipboard.
+Open it from *Advanced settings → Benchmark the models…*, or run `benchmark.py --audio talk.wav --text read.txt --models base,turbo --lang en`.
 
-No window needed either:
+<details>
+<summary><b>Configuration file and usage service</b></summary>
 
-```powershell
-.venv\Scripts\python benchmark.py --audio talk.wav --text what-i-read.txt --models base,turbo,groq --lang en
-```
-
-## Configuration
-
-Everything you change in the settings window is saved to `settings.json` (next to `rover.py`, never committed). A few advanced options are only in the file:
+Settings are saved to `settings.json` (next to `rover.py`, never committed). The ones not in the interface:
 
 ```jsonc
 {
-  "ui_language": "auto",        // "auto" follows Windows, or "en" / "fr"
-  "language": "en",             // dictation language: "en" or "fr" (also the FR/EN switch in the panel)
-  "insert": "type",             // "type" types at the caret; "copy" only puts the text on the clipboard (paste with Ctrl+V)
-  "whisper_model": "base",      // local model: "tiny", "base", "small", "turbo", "medium", "large-v3"
-  "transcription": {
-    "engine": "local",          // "local" (CPU), "gpu", "openai", "groq" or "custom"
-    "model": "",                // empty = the fast default of the service
-    "base_url": "",             // "custom" only: an OpenAI-compatible address, https (http only for localhost)
-    "api_key": ""               // written by the app, encrypted; you can use an environment variable instead
-  },
-  "quotas_url": "",             // optional usage service, see below
-  "rewrite_provider": "auto",   // "auto", "codex", "claude" or "off" (insert the raw transcript)
-  "rewrite_style": "faithful",  // a preset id, or "custom" to use "rewrite_prompt"
-  "rewrite_prompt": "",
-  "claude": { "model": "" },    // empty = Claude's default; "sonnet", "opus", "haiku" or a full model name
-  "codex": {
-    "home": "",                 // Codex profile folder, default %CODEX_HOME% or ~/.codex
-    "model": "",                // empty = Codex default
-    "reasoning": "low",         // minimal | low | medium | high
-    "auth_store": ""            // "", "file", "keyring" or "auto"
-  }
+  "insert": "type",            // "type" or "copy" (clipboard only)
+  "hotkey": "ctrl+alt+r",      // also editable in the settings
+  "quotas_url": "",            // optional local usage service, see below
+  "codex": { "home": "", "model": "", "reasoning": "low", "auth_store": "", "tier": "" },   // tier "priority" = Fast mode
+  "claude": { "model": "" },   // "sonnet", "opus", "haiku" or a full name
+  "animations": {}, "layout": {}   // written by the mascot editor
 }
 ```
 
-### Codex rewrite (optional)
-
-If the [Codex CLI](https://github.com/openai/codex) is on your `PATH` and signed in, Rover pipes the transcript through `codex exec` in a read-only sandbox with tools disabled, only to fix hesitations and punctuation. Each rewrite uses a little of your Codex quota. Choose *Off* under *Rewrite with* (or `"rewrite_provider": "off"`) to skip it.
-
-### Usage panel (optional)
-
-The panel reads **local** JSON from `quotas_url`, which any small service of yours can provide. It understands the shape returned by Codex's rate-limit API:
-
-```jsonc
-{ "now": 1790000000,
-  "accounts": [{ "name": "Account 1",
-    "metrics": { "last_success_at": 1789999990,
-      "limits": { "rateLimits": {
-        "planType": "pro",
-        "primary":   { "usedPercent": 38, "windowDurationMins": 300,   "resetsAt": 1790010000 },
-        "secondary": { "usedPercent": 61, "windowDurationMins": 10080, "resetsAt": 1790400000 },
-        "credits":   { "hasCredits": true, "balance": "1250" } } } } }] }
-```
-
-Without `quotas_url` the panel says so and the rest of the app works normally. Claude's plan usage is not exposed by any local API, so the panel only links to [claude.ai/settings/usage](https://claude.ai/settings/usage) when a local Claude install is detected.
-
-## How it is built
-
-```
-rover.py        the application: windows, hover logic, dictation flow, settings window
-ui_kit.py       anti-aliased panels, icons and SVG paths drawn with Pillow (no image assets for UI)
-layered.py      per-pixel-alpha windows (UpdateLayeredWindow): clean edges, real fades
-mascots.py      sprite atlases, clippy.js character packs, GIFs – and the event → animation mapping
-voice.py        microphone capture and faster-whisper transcription
-transcribe.py   optional external speech service (OpenAI, Groq…) with local fallback
-accel.py        GPU speech runtime (whisper.cpp Vulkan): download, checksum, server
-gpu.py          graphics card and Vulkan driver detection
-benchmark.py    compare speech models on your own words (window or command line)
-scoring.py      word error rate and diff of a transcript against the text that was read
-core.py         optional Codex rewrite and usage reading
-settings.py     preferences, shortcut list, mascot discovery
-windows.py      hotkey, focus tracking, text insertion (SendInput), multi-monitor placement
-i18n.py         English source strings + French translation
-tools/          install helpers, asset generators, screenshot renderer
-tests/unit      headless tests (run in CI)        tests/gui   checks that need a real desktop
-```
-
-Design notes: windows are borderless top-levels; buttons and the rail are true per-pixel-alpha layered windows, bubbles use a colour key with crisp edges so Tk widgets can live inside them.
+The usage panel reads **local** JSON from `quotas_url` in the shape of Codex's rate-limit API (`rateLimits.primary` / `secondary` with `usedPercent`, `windowDurationMins`, `resetsAt`, and `credits`). Without it the panel says so and everything else works. Claude's plan usage has no local API, so the panel only links to [claude.ai/settings/usage](https://claude.ai/settings/usage).
+</details>
 
 ## Development
 
@@ -278,35 +160,27 @@ Design notes: windows are borderless top-levels; buttons and the rail are true p
 python -m venv .venv
 .venv\Scripts\pip install -r requirements-dev.txt
 .venv\Scripts\python -m pytest -q tests            # unit tests, no display needed
-.venv\Scripts\python tests\gui\check_drag.py       # drag/hover checks on a real desktop
-.venv\Scripts\python tests\gui\check_animation.py  # animations, packs and shortcuts
-.venv\Scripts\python tools\make_screenshots.py --lang en --theme dark --out docs\img\en --gif
+.venv\Scripts\python tests\gui\check_drag.py       # checks that need a real desktop (tests\gui\)
+.venv\Scripts\python tools\make_screenshots.py --lang en --theme dark --out docs\img\en
 ```
 
-Adding a language: translate the strings in `i18n.py` (a unit test checks that every `tr("…")` string has a translation).
+`rover.py` is the application; `ui_kit.py` draws panels, icons and the XP controls with Pillow; `layered.py` handles per-pixel-alpha windows; `mascots.py`/`mascot_setup.py` the animations; `voice.py`, `transcribe.py`, `accel.py`, `modelstore.py` speech; `core.py`, `codex_server.py`, `styles.py` the rewrite; `i18n.py` the English source strings and the French translation (a test checks every string has one). See [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## Troubleshooting
 
 | Symptom | Fix |
 |---|---|
-| *"Microphone unavailable"* | Windows Settings → Privacy → Microphone → allow desktop apps. |
-| *"Whisper model unavailable"* | The first dictation needs internet to fetch the model; run `install.ps1 -DownloadModel` while online. |
-| Ctrl+Alt+R does nothing | Another app owns the shortcut; click the mascot instead. |
-| The text is typed in the wrong window | Click in the target field *before* dictating; the mascot remembers the last window you used. |
-| Typing is unreliable in a particular app | Set `"insert": "copy"`: the text goes to the clipboard and you paste it yourself. The panel also has a **Copy** button and the right-click menu has *Copy last text*. |
-| "The API key was rejected" | Check the key on the provider's site; ChatGPT subscriptions do not work here (see above). Use *Test* in the advanced settings. |
-| Some of my draft was replaced | The text is typed at the caret, so a *selected* passage is replaced like any typing. The mascot never takes the keyboard focus when you click it, so your caret and draft stay untouched. |
-| Something crashed | Look at `rover.log` next to `rover.py`. |
+| "Microphone unavailable" | Windows Settings → Privacy → Microphone → allow desktop apps. |
+| "Whisper model unavailable" | Use the model's **Download** button in the advanced settings (needs internet once). |
+| The shortcut does nothing | Another app owns it: pick another one in the advanced settings, or click the mascot. |
+| Text typed in the wrong window | Click in the target field *before* dictating. |
+| Typing is unreliable in one app | Set *When the text is ready* to *Copy only* and paste yourself. |
+| Something crashed | Read `rover.log` next to `rover.py`. |
 
-## Privacy & security
+## Privacy and security
 
-- By default audio is processed in memory by a local model and is never written to disk or uploaded. Only if you choose an external transcription service is the recording sent to it, and the API key is stored encrypted for your Windows account.
-- Prompts are not stored. The optional Codex rewrite sends the **transcript text** to OpenAI through your own Codex session, like any Codex prompt.
-- Account credentials stay in their usual places; the app never reads them.
-- Shortcut icons are fetched only from the addresses you add.
+Audio is processed in memory by a local model and is never written to disk or uploaded, unless you choose an external service (then the recording goes to it, and its key is stored encrypted). The optional rewrite sends the **transcript text** (and, if you turn it on, the recent dictations) to OpenAI or Anthropic through your own Codex or Claude session. Account credentials stay where their tools keep them; the app never reads them. Downloads (speech runtime, models, mascots) only happen when you press a button or run a tool, and are checksum-verified when a checksum exists.
 
 ## License and credits
 
-MIT © NathanNT. See [`LICENSE`](LICENSE) and [`NOTICE.md`](NOTICE.md).
-
-Clippy and the other Microsoft Agent characters are the property of Microsoft and appear in screenshots only to show compatibility; OpenAI, ChatGPT, Codex and Claude names and logos belong to their owners and are used to label shortcuts. This project is not affiliated with any of them.
+MIT © NathanNT, see [`LICENSE`](LICENSE) and [`NOTICE.md`](NOTICE.md). Clippy and the other Microsoft Agent characters belong to Microsoft and appear in screenshots only to show compatibility; Windows XP is a trademark of Microsoft, and this theme is an homage, not an official asset; OpenAI, ChatGPT, Codex, Claude, Qwen and DeepSeek names and logos belong to their owners. This project is not affiliated with any of them.

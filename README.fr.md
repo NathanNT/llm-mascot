@@ -4,7 +4,7 @@
 
 **Une petite mascotte de bureau pour Windows qui affiche ce qu'il reste de vos quotas IA et tape ce que vous dites.**
 
-Parlez-lui : elle transcrit sur votre PC, reformule au besoin avec Codex, puis dépose le texte dans le champ où vous étiez — sans jamais appuyer sur Entrée à votre place.
+Parlez-lui : elle transcrit sur votre PC, reformule au besoin avec Codex ou Claude, puis dépose le texte dans le champ où vous étiez. Elle n'appuie jamais sur Entrée à votre place.
 
 [![CI](https://github.com/NathanNT/llm-mascot/actions/workflows/ci.yml/badge.svg)](https://github.com/NathanNT/llm-mascot/actions/workflows/ci.yml)
 ![Plateforme](https://img.shields.io/badge/plateforme-Windows%2010%2F11-0078d4)
@@ -20,24 +20,20 @@ Parlez-lui : elle transcrit sur votre PC, reformule au besoin avec Codex, puis d
 
 </div>
 
----
+## Ce que ça fait
 
-## ✨ Ce que vous obtenez
+- **Dictée partout.** Cliquez sur la mascotte ou appuyez sur un raccourci (**Ctrl+Alt+R** par défaut, modifiable), parlez, recliquez. Français et anglais, transcrits en local ([faster-whisper](https://github.com/SYSTRAN/faster-whisper)) ou sur votre carte graphique.
+- **Inséré, jamais envoyé.** Le texte est tapé au curseur du champ qui avait le focus : ni presse-papiers, ni touche Entrée.
+- **Reformulation à votre façon.** Codex ou Claude peuvent en faire un prompt clair et corrigé, le corriger, le raccourcir et plus (8 styles, ou le vôtre).
+- **Consommation d'un coup d'œil.** Survolez la jauge pour vos fenêtres d'usage Codex et vos crédits.
+- **Rail de raccourcis.** Claude, ChatGPT et tout ce que vous ajoutez ; survolez un logo pour ouvrir une nouvelle conversation dans l'application, VS Code, un terminal ou le navigateur.
+- **Une vraie personnalité.** Chaque mascotte réagit : elle salue, écoute, réfléchit, fête une réussite, s'effondre sur une erreur. L'**éditeur de mascotte** choisit l'animation de chaque événement et déplace les icônes.
+- **Trois styles :** sombre, clair chaleureux, et un **Windows XP** fidèle.
+- **Privé par défaut.** L'audio reste sur votre PC, rien n'est écrit sur le disque, aucune télémétrie.
 
-| Fonction | Détails |
-|---|---|
-| **Dictée partout** | Cliquez sur la mascotte ou appuyez sur **Ctrl+Alt+R**, parlez, recliquez. Français et anglais, transcription **locale** avec [faster-whisper](https://github.com/SYSTRAN/faster-whisper). |
-| **Inséré, jamais envoyé** | Le texte est tapé dans le champ qui avait le focus (ni presse-papiers, ni touche Entrée). Si vous avez changé de fenêtre, un bouton permet de l'insérer plus tard. |
-| **Reformulation optionnelle, à votre style** | Codex ou Claude peuvent mettre au propre, corriger, raccourcir, étoffer ou restructurer ce que vous avez dit, avec un style prédéfini ou votre propre consigne. Sans l'un ni l'autre, le texte brut est inséré. |
-| **Consommation d'un coup d'œil** | Survolez la jauge : fenêtres d'usage Codex, échéances, crédits. Pour Claude, un lien vers sa page de consommation — aucun chiffre inventé. |
-| **Rail de raccourcis IA** | Des boutons ronds pour Claude, ChatGPT et **tout ce que vous ajoutez** : un site, une appli web locale, un programme, un dossier. Les icônes sont récupérées automatiquement. |
-| **Une vraie personnalité** | Neuf réactions par mascotte : elle salue à votre arrivée, écoute pendant que vous parlez, lit pendant qu'elle réfléchit, saute en cas de succès, s'effondre en cas d'erreur et court quand on la déplace. |
-| **À votre image** | Mascotte, taille, thème (sombre / clair chaleureux), côté du rail et langue (English / Français) se règlent dans une fenêtre intégrée. |
-| **Privé par conception** | L'audio ne quitte jamais votre PC, rien n'est enregistré sur disque, aucune télémétrie. |
+## Installation
 
-## 🚀 Installation en une minute
-
-**Prérequis :** Windows 10 ou 11, [Python 3.10+](https://www.python.org/downloads/) (`winget install Python.Python.3.12`), un microphone.
+Prérequis : Windows 10 ou 11, [Python 3.10+](https://www.python.org/downloads/), un micro.
 
 ```powershell
 git clone https://github.com/NathanNT/llm-mascot.git
@@ -45,266 +41,146 @@ cd llm-mascot
 .\install.bat
 ```
 
-Ou téléchargez le ZIP depuis GitHub, extrayez-le et double-cliquez sur **`install.bat`**. Le script crée un environnement privé, installe les dépendances, ajoute un raccourci sur le bureau et lance la mascotte.
-
-| Option | Effet |
-|---|---|
-| `.\install.ps1 -Startup` | Lance aussi la mascotte au démarrage de Windows |
-| `.\install.ps1 -DownloadModel` | Télécharge tout de suite le modèle vocal (≈150 Mo) au lieu de la première dictée |
-| `.\uninstall.ps1` | Supprime les raccourcis |
-| `run.bat` | Lance l'application à la main |
-
-> Le modèle vocal se télécharge une seule fois, à la première dictée. Ensuite tout fonctionne hors ligne.
+(ou téléchargez le ZIP et double-cliquez sur `install.bat`). Le script crée un environnement privé, installe les dépendances, ajoute un raccourci sur le bureau et lance la mascotte. `.\install.ps1 -Startup` la lance aussi au démarrage de Windows, `-DownloadModel` télécharge le modèle de parole tout de suite (≈150 Mo, sinon à la première dictée), `.\uninstall.ps1` supprime les raccourcis.
 
 ## Utilisation
 
 1. **Survolez la mascotte** : elle salue et fait apparaître deux boutons ronds et le rail de raccourcis.
-2. **Survolez la jauge** (au-dessus) pour ouvrir le panneau de **consommation**. **Survolez le micro** (en dessous) pour ouvrir le panneau de **dictée**.
-3. **Cliquez dans un champ de texte**, puis cliquez sur la mascotte (ou **Ctrl+Alt+R**), parlez, recliquez.
-4. Le texte apparaît au niveau du curseur, après ce que vous aviez déjà écrit. Rien n'est envoyé : vous appuyez vous-même sur Entrée. Les retours à la ligne sont tapés en Maj+Entrée.
-5. **Déplacez** la mascotte où vous voulez ; les panneaux la suivent. **Clic droit** pour le menu.
+2. **Survolez la jauge** (au-dessus) pour la consommation, **le micro** (en dessous) pour le panneau de dictée.
+3. Cliquez dans un champ de texte, cliquez sur la mascotte (ou utilisez le raccourci), parlez, recliquez. Le texte apparaît au curseur.
+4. **Faites glisser** la mascotte où vous voulez, les panneaux suivent. **Clic droit** pour le menu.
 
 <div align="center">
 <img src="docs/img/fr/states.png" alt="Les cinq états de la dictée : prêt, écoute, traitement, texte prêt, erreur">
-<br><sub>Prêt · Écoute (niveau du micro en direct) · Traitement · Texte prêt à insérer · Erreur avec nouvel essai</sub>
+<br><sub>Prêt · Écoute · Traitement · Texte prêt · Erreur avec nouvel essai</sub>
 </div>
 
-## 🎭 Mascottes
+## Styles
 
 <div align="center">
-<img src="docs/img/fr/mascots.png" alt="Les assistants Windows classiques : Clippy, Merlin, Genie, Rocky, Peedy, F1, Genius et Rover XP" width="760">
+<img src="docs/img/fr/hero.png" alt="Thème sombre" width="230">
+<img src="docs/img/en-light/hero.png" alt="Thème clair" width="230">
+<img src="docs/img/fr-xp/hero.png" alt="Thème Windows XP" width="230">
+<br><sub>Sombre · Clair chaleureux · Windows XP</sub>
 </div>
 
-Les assistants animés classiques de Windows fonctionnent directement, avec des dizaines d'animations chacun. Les voici au travail pendant que l'application transcrit et reformule une dictée :
+### Windows XP
+
+*Personnalisation → Thème → Windows XP* habille toute l'application comme le système d'origine : barres de titre Luna aux coins arrondis, fenêtres beiges, boutons radio, champs de texte blancs, curseur creux, boutons qui s'éclairent en orange sous le pointeur, blocs de progression verts, bille bleue et rouge du micro, et le rail de raccourcis dessiné comme la boîte à outils de MS Paint, dont le menu se déroule en barre d'outils.
 
 <div align="center">
-<img src="docs/img/fr/characters.png" alt="Clippy, Merlin, Genie, Peedy et F1 jouent leur animation de traitement" width="100%">
+<img src="docs/img/fr-xp/settings.png" alt="Fenêtre de personnalisation au style Windows XP" width="600">
+<br>
+<img src="docs/img/fr-xp/advanced.png" alt="Réglages avancés au style Windows XP" width="600">
+<br>
+<img src="docs/img/fr-xp/states.png" alt="États de la bulle de dictée au style Windows XP" width="100%">
+<br>
+<img src="docs/img/fr-xp/editor.png" alt="Éditeur de mascotte au style Windows XP" width="600">
 </div>
 
-- **Clippy, Merlin, Genie, Rocky, Peedy, F1, Genius, Rover XP…** utilisent le format clippy.js. Ce sont des créations de Microsoft : elles ne sont **pas incluses** dans ce dépôt ; téléchargez-les sur votre machine, pour votre usage personnel, avec :
-  ```powershell
-  .venv\Scripts\python tools\get_agents.py --list
-  .venv\Scripts\python tools\get_agents.py Clippy Merlin Genie
-  ```
-  Elles reçoivent les mêmes événements que toutes les mascottes (salutation, écoute, traitement, félicitations, alerte…) et jouent leurs animations de repos au hasard.
-- **Une mascotte de secours** : un petit chien original (neuf réactions), pour que l'application fonctionne avant tout téléchargement.
-- **Vos propres images** : PNG, GIF ou WebP déposés dans `mascots/` (ou importés depuis la fenêtre de réglages). Un PNG de 1536 × 1872 organisé comme l'atlas ci-dessous joue les neuf réactions.
-- **Mascottes Codex** : si l'extension Codex est installée, ses mascottes apparaissent toutes seules dans les réglages (lues sur place, jamais copiées).
+## Mascottes
+
+<div align="center">
+<img src="docs/img/fr/mascots.png" alt="Clippy, Merlin, Genie, Rocky, Peedy, F1, Genius et Rover XP" width="720">
+</div>
+
+- **Les assistants classiques de Windows** (Clippy, Merlin, Genie, Peedy…) utilisent le format clippy.js. Ce sont des œuvres de Microsoft : elles ne sont **pas dans ce dépôt** ; téléchargez-les sur votre PC, pour votre usage : `.venv\Scripts\python tools\get_agents.py --list`, puis `... get_agents.py Clippy Merlin`.
+- **Mascottes d'IA de la communauté** (un Claude, une baleine DeepSeek, un capybara pour la mascotte de Qwen) : `tools\get_llm_mascots.py` récupère à la demande des « pets » Codex faits par des fans, avec auteurs et licences notés dans `mascots\CREDITS.txt`. Ce ne sont pas des œuvres officielles et elles ne sont jamais commitées ici.
+- **Un chien original** est fourni, il marche avant tout téléchargement. **Vos propres** PNG, GIF ou WebP déposés dans `mascots/` marchent aussi, ainsi que les pets Codex déjà présents sur votre PC.
+- **Éditeur de mascotte** (*Personnalisation → Modifier animations et icônes…*) : choisissez l'animation jouée au repos, au survol, à l'écoute, au traitement, en cas de réussite, d'erreur et de déplacement vers la gauche ou la droite, et faites glisser la jauge, le micro et le rail où vous voulez. Enregistré par mascotte.
 
 <details>
-<summary><b>Format de l'atlas</b> (pour créer votre mascotte)</summary>
+<summary>Disposition de l'atlas de sprites, pour dessiner votre mascotte</summary>
 
-Un atlas est un PNG transparent de **8 colonnes × 9 lignes de cellules de 192 × 208 px** (1536 × 1872). Les cellules inutilisées restent vides.
-
-| Ligne | Animation | Images | Jouée quand |
-|---|---|---|---|
-| 0 | repos | 6 | au repos (boucle) |
-| 1 | course à droite | 8 | déplacement vers la droite |
-| 2 | course à gauche | 8 | déplacement vers la gauche |
-| 3 | salut | 4 | on survole la mascotte |
-| 4 | saut | 5 | texte prêt ou inséré |
-| 5 | échec | 8 | une erreur est survenue |
-| 6 | attente | 6 | écoute (boucle) |
-| 7 | flair | 6 | animation de réserve |
-| 8 | lecture | 6 | traitement (boucle) |
-
-`python tools/make_default_mascot.py` régénère l'atlas fourni et sert de point de départ.
+Un PNG transparent de **8 colonnes × 9 lignes de cellules de 192 × 208 px** (1536 × 1872) ; les cellules inutilisées restent vides. Lignes : repos · course à droite · course à gauche · salut (survol) · saut (réussite) · échec (erreur) · attente (écoute) · libre · lecture (traitement). `python tools/make_default_mascot.py` régénère celui fourni et sert de point de départ.
 </details>
 
 ## Rail de raccourcis
 
-Le rail sur le côté de la mascotte ouvre vos outils IA en un clic. Appuyez sur **＋** (ou *Personnalisation → Raccourcis*) puis saisissez :
+Appuyez sur **＋** pour ajouter un site (`https://chatgpt.com`), une application locale (`http://localhost:3000`), un programme ou un dossier ; son icône est récupérée automatiquement (jusqu'à huit). **Survolez le logo de Claude ou de ChatGPT** : une rangée de boutons ronds se déroule, un par façon de lancer une conversation installée sur votre PC (extension VS Code ou Cursor, terminal, navigateur par défaut), chacun marqué de l'icône du programme qu'il ouvre ; cliquer sur le logo lui-même ouvre l'application de bureau s'il y en a une.
 
-- un site : `https://chatgpt.com`
-- une appli web locale : `http://localhost:3000`
-- un programme ou un raccourci : `C:\Program Files\App\app.exe`, un `.lnk`, un dossier
+## Réglages
 
-L'icône est le favicon du site ou l'icône Windows du fichier. Clic droit sur un bouton pour l'ouvrir ou le retirer. Huit raccourcis au maximum.
-
-<div align="center">
-<img src="docs/img/fr/settings.png" alt="La fenêtre de personnalisation" width="640">
-</div>
-
-<div align="center">
-Sombre par défaut, avec un thème clair chaleureux :<br>
-<img src="docs/img/en-light/hero.png" alt="Light theme" width="240">
-</div>
-
-## Paramètres avancés
-
-*Personnalisation → Paramètres avancés* regroupe les options qui changent le comportement de la dictée.
-
-<div align="center">
-<img src="docs/img/fr/advanced.png" alt="La page des paramètres avancés" width="720">
-</div>
+*Personnalisation → Paramètres avancés* (captures ci-dessus) :
 
 | Réglage | Effet |
 |---|---|
-| **Lancer au démarrage de Windows** | Démarre la mascotte à l'ouverture de votre session (une entrée par utilisateur, sans droits administrateur). Appliqué en appuyant sur *Enregistrer*. |
-| **Quand le texte est prêt** | *Le taper dans le champ* (par défaut) ou *Copier seulement* dans le presse-papiers. |
-| **Transcrire avec** | *Processeur* (par défaut, privé, hors ligne), *GPU* (votre carte graphique, voir plus bas) ou un service externe : **OpenAI** (`gpt-4o-mini-transcribe`, le rapide et économique), **Groq** (`whisper-large-v3-turbo`, très rapide, offre gratuite) ou **Autre** (toute adresse compatible OpenAI). Si le service est injoignable ou sans crédit, le modèle local prend le relais quand il est installé. |
-| **Modèle vocal** (processeur, GPU) | `tiny` (≈75 Mo) à `large-v3` (≈3 Go). **`base` (★) est le choix rapide par défaut**, chargé en arrière-plan au démarrage pour que la première dictée réponde tout de suite. Pour un vocabulaire technique, `turbo` ou un service externe est en général bien plus précis : mesurez-le avec le benchmark. Un modèle se télécharge une seule fois, à sa première utilisation. |
-| **Reformuler avec** | *Automatique* (Codex s'il est disponible, sinon Claude), *Codex*, *Claude*, ou *Non* pour toujours insérer la transcription brute. |
-| **Modèle Codex / Claude** | Le modèle utilisé par chaque outil. Vide = le modèle par défaut de l'outil ; pour Claude, vous pouvez saisir un alias comme `sonnet`, `opus` ou `haiku`, ou un nom complet. |
-| **Style de transcription** | La consigne d'édition envoyée avec votre dictée. Choisissez un style prédéfini ou écrivez le vôtre. |
+| **Raccourci de dictée** | Appuyez sur une nouvelle combinaison ; refusée si un autre programme la possède déjà. |
+| **Transcrire avec** | **Processeur** (privé, hors ligne), **GPU** (AMD, NVIDIA ou Intel via Vulkan), ou un service : **OpenAI**, **Groq**, ou toute adresse compatible OpenAI. Modèles de `tiny` à `large-v3` ; chacun a un bouton **Télécharger** avec une barre de progression. |
+| **Transcription en direct** | Affiche les mots dans la bulle du micro pendant que vous parlez (GPU). |
+| **Reformuler avec** | *Automatique* (Codex, sinon Claude), *Codex*, *Claude* ou *Non*. Codex reste lancé en arrière-plan, donc une reformulation prend environ 3 s ; son **mode rapide** est environ 1,5 fois plus rapide et consomme plus de crédits. |
+| **Style** | **Corrigé et clair** (principal : un prompt clair et corrigé qui formule le but et ce que doit contenir la réponse), Correction, Court et simple, Étoffé, Tâche de code, Liste à puces, Ton professionnel, Ton décontracté, ou votre propre texte. |
+| **Mémoriser les dernières dictées** | Envoie les 5 dernières dictées des 30 dernières minutes avec la suivante pour que la reformulation comprenne ce dont vous parlez. En mémoire seulement, désactivé par défaut. |
+| **Lancer au démarrage · Quand le texte est prêt** | Démarrer avec Windows ; taper dans le champ ou seulement copier. |
 
-Les styles : **Mise au propre** (hésitations et ponctuation, vos propres mots), **Correction** (orthographe et syntaxe seulement, rien d'autre ne change), **Court et simple**, **Étoffé** (explicite l'implicite, n'invente rien), **Prompt prêt pour une IA**, **Tâche de code**, **Liste à puces**, **Ton professionnel**, **Ton décontracté** et **Personnalisé**. Modifiez le texte d'un style prédéfini et il devient *Personnalisé*.
+<details>
+<summary><b>Reconnaissance vocale sur le GPU</b></summary>
 
-<div align="center">
-<img src="docs/img/fr/advanced-service.png" alt="Choisir un service de transcription externe" width="640">
-</div>
+*Transcrire avec → GPU* lance whisper.cpp avec le backend **Vulkan**, donc AMD, NVIDIA et Intel fonctionnent. La page détecte votre carte et son pilote, puis un bouton télécharge le moteur (18 Mo, construit à partir du code public de whisper.cpp par les [GitHub Actions](.github/workflows/whisper-runtime.yml) de ce dépôt, SHA-256 fixé dans `runtime_manifest.json` et vérifié avant toute exécution) et votre modèle depuis [Hugging Face](https://huggingface.co/ggerganov/whisper.cpp) (empreinte vérifiée). Le serveur garde le modèle chargé sur le GPU, démarre et s'arrête avec l'application, et le modèle CPU prend le relais en cas de problème. Dans nos essais sur une AMD RX 6600 XT, `turbo` répondait environ deux fois plus vite que sur le processeur avec la même précision, et les dictées courtes en moins d'une seconde.
+</details>
 
-#### Faire tourner le modèle vocal sur votre carte graphique
+<details>
+<summary><b>Transcription externe : clé d'API, pas votre compte ChatGPT</b></summary>
 
-*Transcrire avec → GPU* utilise whisper.cpp avec le moteur **Vulkan** : il fonctionne donc sur les cartes **AMD, NVIDIA et Intel** (la voie CUDA habituelle n'existe que pour NVIDIA). La page détecte votre carte et son pilote, puis un seul bouton prépare tout :
+Les API de parole d'OpenAI et de Groq sont facturées par clé d'API ; un compte ChatGPT ou Codex ne les inclut pas et l'application ne le lit jamais pour cela. Collez une clé dans *Clé d'API* : elle est chiffrée pour votre compte Windows (DPAPI) et jamais écrite en clair dans `settings.json` (ou utilisez `OPENAI_API_KEY` / `GROQ_API_KEY`). Avec un service choisi, **l'enregistrement lui est envoyé** ; s'il est injoignable, le modèle local prend le relais.
+</details>
 
-<div align="center">
-<img src="docs/img/fr/advanced-gpu.png" alt="Le panneau d'accélération GPU avec la carte graphique détectée" width="640">
-</div>
+## Comparez avec vos propres mots
 
-- **Détection** : votre adaptateur (AMD / NVIDIA / Intel) et si son pilote expose Vulkan. Sinon, *Ouvrir la page des pilotes* vous mène à la page de téléchargement du constructeur ; installer un pilote graphique demande votre accord d'administrateur, donc l'application ne le fait jamais en silence.
-- **Configurer l'accélération GPU** télécharge deux éléments, uniquement quand vous appuyez sur le bouton : le moteur vocal (18 Mo, `whisper-server.exe`, **compilé à partir du code public de whisper.cpp par les [GitHub Actions](.github/workflows/whisper-runtime.yml) de ce dépôt** et publié en release ; son SHA-256 est figé dans `runtime_manifest.json` et vérifié avant que quoi que ce soit soit décompressé ou lancé), et le modèle choisi depuis le [dépôt whisper.cpp sur Hugging Face](https://huggingface.co/ggerganov/whisper.cpp) (base ≈148 Mo, turbo ≈574 Mo…; vérifié avec la somme de contrôle de Hugging Face).
-- **Reste rapide** : le serveur garde le modèle chargé sur le GPU, démarre en arrière-plan avec l'application et s'arrête avec elle (il ne peut pas lui survivre). En cas de problème, le modèle du processeur prend le relais s'il est installé.
-- **Tester le GPU** indique le temps de chargement du modèle et le temps de réponse ; le [benchmark](#benchmark-sur-vos-propres-mots) liste les modèles GPU à côté de ceux du processeur pour comparer sur votre propre voix.
-
-#### Un transcripteur externe : une clé API, pas votre connexion ChatGPT
-
-Les API vocales d'OpenAI et de Groq sont facturées ou limitées **par clé API**. Une connexion ChatGPT ou Codex ne les inclut pas : impossible donc de dépenser les crédits de votre abonnement pour transcrire, et l'application ne lit pas votre connexion ChatGPT/Codex pour cela. Créez une clé sur le site du fournisseur, collez-la dans *Clé API* et appuyez sur *Enregistrer la clé* : elle est chiffrée pour votre compte Windows (DPAPI) et jamais écrite en clair dans `settings.json`. Vous pouvez aussi définir la variable d'environnement `OPENAI_API_KEY` / `GROQ_API_KEY`. *Tester* vérifie la clé sans rien dépenser. Quand vous choisissez un service, **l'enregistrement lui est envoyé**.
-
-Pour la vitesse, gardez les valeurs par défaut : `gpt-4o-mini-transcribe` (OpenAI) ou `whisper-large-v3-turbo` (Groq) sont les modèles petits et rapides, et la dictée est une tâche facile pour eux. Le modèle local `base` est l'alternative privée.
-
-#### Pourquoi les styles « Prompt prêt pour une IA » et « Tâche de code » ont cette forme
-
-Ils suivent ce sur quoi les guides de prompt d'Anthropic et d'OpenAI s'accordent : être clair et direct, mettre la tâche en premier, ajouter le contexte et la raison, lister des exigences concrètes, dire quoi faire plutôt que quoi éviter, préciser le format de sortie, garder noms et identifiants exacts, ne rien ajouter pour meubler. Les styles transforment une dictée décousue en cette forme sans rien inventer. Sources : [bonnes pratiques de prompt de Claude](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices) et [prompt engineering d'OpenAI](https://developers.openai.com/api/docs/guides/prompt-engineering).
-
-Claude est utilisé via [Claude Code](https://docs.claude.com/en/docs/claude-code) en mode impression, avec tous les outils désactivés et sans session enregistrée : il ne fait que reformuler du texte.
-
-## Benchmark sur vos propres mots
-
-Le meilleur modèle dépend de *votre* vocabulaire. Le benchmark répond en une minute : saisissez le texte que vous allez lire, enregistrez-vous une fois en le lisant, cochez les modèles, et chacun transcrit **ce même enregistrement**. Chacun est noté par rapport à votre texte (mots erronés, substitutions, suppressions, ajouts) et chronométré, et vous voyez précisément quels mots sont faux.
+Le meilleur modèle dépend de votre vocabulaire. Lisez une fois un texte que vous avez saisi, cochez les modèles, et chacun transcrit **ce même enregistrement** : vous obtenez les mots faux, le temps d'attente et exactement quels mots ont échoué, avec le plus précis, le plus rapide et le meilleur compromis désignés.
 
 <div align="center">
-<img src="docs/img/fr/benchmark.png" alt="La fenêtre de benchmark comparant deux modèles vocaux" width="760">
+<img src="docs/img/fr/benchmark.png" alt="La fenêtre de benchmark comparant des modèles vocaux" width="680">
 </div>
 
-- Ouvrez-le depuis *Personnalisation → Paramètres avancés → Comparer les modèles…* ou depuis le menu du clic droit de la mascotte.
-- Les modèles non installés affichent leur taille de téléchargement et sont décochés ; les services (OpenAI, Groq) apparaissent quand une clé est définie et tournent en parallèle des modèles locaux. Rien n'est envoyé nulle part sans que vous cochiez un service.
-- Le résumé désigne le **plus précis**, le **plus rapide** et le **meilleur compromis** (le plus rapide à moins de 2 points du plus précis). Le temps exclut le chargement unique du modèle, indiqué à part.
-- *Copier les résultats* place un tableau Markdown dans le presse-papiers.
+Ouvrez-le depuis *Paramètres avancés → Comparer les modèles…*, ou lancez `benchmark.py --audio talk.wav --text read.txt --models base,turbo --lang fr`.
 
-Sans fenêtre non plus :
+<details>
+<summary><b>Fichier de configuration et service de consommation</b></summary>
 
-```powershell
-.venv\Scripts\python benchmark.py --audio parole.wav --text ce-que-jai-lu.txt --models base,turbo,groq --lang fr
-```
-
-## Configuration
-
-Tout ce que vous changez dans la fenêtre de réglages est enregistré dans `settings.json` (à côté de `rover.py`, jamais versionné). Quelques options avancées n'existent que dans le fichier :
+Les réglages sont enregistrés dans `settings.json` (à côté de `rover.py`, jamais commité). Ceux qui ne sont pas dans l'interface :
 
 ```jsonc
 {
-  "ui_language": "auto",        // "auto" suit Windows, ou "en" / "fr"
-  "language": "fr",             // langue de dictée : "en" ou "fr" (aussi le sélecteur FR/EN du panneau)
-  "insert": "type",             // "type" tape au niveau du curseur ; "copy" met seulement le texte dans le presse-papiers (Ctrl+V)
-  "whisper_model": "base",      // modèle local : "tiny", "base", "small", "turbo", "medium", "large-v3"
-  "transcription": {
-    "engine": "local",          // "local" (processeur), "gpu", "openai", "groq" ou "custom"
-    "model": "",                // vide = le modèle rapide par défaut du service
-    "base_url": "",             // "custom" seulement : une adresse compatible OpenAI, https (http seulement pour localhost)
-    "api_key": ""               // écrite par l'application, chiffrée ; une variable d'environnement convient aussi
-  },
-  "quotas_url": "",             // service de consommation optionnel, voir plus bas
-  "rewrite_provider": "auto",   // "auto", "codex", "claude" ou "off" (insère la transcription brute)
-  "rewrite_style": "faithful",  // l'identifiant d'un style, ou "custom" pour utiliser "rewrite_prompt"
-  "rewrite_prompt": "",
-  "claude": { "model": "" },    // vide = modèle par défaut ; "sonnet", "opus", "haiku" ou un nom complet
-  "codex": {
-    "home": "",                 // dossier du profil Codex, par défaut %CODEX_HOME% ou ~/.codex
-    "model": "",                // vide = modèle par défaut de Codex
-    "reasoning": "low",         // minimal | low | medium | high
-    "auth_store": ""            // "", "file", "keyring" ou "auto"
-  }
+  "insert": "type",            // "type" ou "copy" (presse-papiers seulement)
+  "hotkey": "ctrl+alt+r",      // modifiable aussi dans les réglages
+  "quotas_url": "",            // service local de consommation optionnel, voir ci-dessous
+  "codex": { "home": "", "model": "", "reasoning": "low", "auth_store": "", "tier": "" },   // tier "priority" = mode rapide
+  "claude": { "model": "" },   // "sonnet", "opus", "haiku" ou un nom complet
+  "animations": {}, "layout": {}   // écrits par l'éditeur de mascotte
 }
 ```
 
-### Reformulation Codex (optionnelle)
-
-Si le [CLI Codex](https://github.com/openai/codex) est dans le `PATH` et connecté, la mascotte envoie la transcription à `codex exec` dans un bac à sable en lecture seule, sans outils, uniquement pour corriger hésitations et ponctuation. Chaque reformulation consomme un peu de quota Codex. Choisissez *Non* sous *Reformuler avec* (ou `"rewrite_provider": "off"`) pour l'éviter.
-
-### Panneau de consommation (optionnel)
-
-Le panneau lit un JSON **local** à l'adresse `quotas_url`, que n'importe quel petit service de votre cru peut fournir. Il comprend la forme renvoyée par l'API de limites de Codex :
-
-```jsonc
-{ "now": 1790000000,
-  "accounts": [{ "name": "Compte 1",
-    "metrics": { "last_success_at": 1789999990,
-      "limits": { "rateLimits": {
-        "planType": "pro",
-        "primary":   { "usedPercent": 38, "windowDurationMins": 300,   "resetsAt": 1790010000 },
-        "secondary": { "usedPercent": 61, "windowDurationMins": 10080, "resetsAt": 1790400000 },
-        "credits":   { "hasCredits": true, "balance": "1250" } } } } }] }
-```
-
-Sans `quotas_url`, le panneau l'indique et le reste de l'application fonctionne normalement. La consommation de l'abonnement Claude n'est exposée par aucune API locale : le panneau propose seulement un lien vers [claude.ai/settings/usage](https://claude.ai/settings/usage) quand une installation locale de Claude est détectée.
-
-## Architecture
-
-```
-rover.py        l'application : fenêtres, survol, dictée, fenêtre de réglages
-ui_kit.py       panneaux, icônes et tracés SVG lissés dessinés avec Pillow (aucune image d'interface)
-layered.py      fenêtres à transparence par pixel (UpdateLayeredWindow) : bords nets, vrais fondus
-mascots.py      atlas de sprites, packs clippy.js, GIF – et lien événement → animation
-voice.py        capture du micro et transcription faster-whisper
-transcribe.py   service vocal externe optionnel (OpenAI, Groq…) avec repli local
-accel.py        moteur vocal GPU (whisper.cpp Vulkan) : téléchargement, somme de contrôle, serveur
-gpu.py          détection de la carte graphique et du pilote Vulkan
-benchmark.py    compare les modèles vocaux sur vos propres mots (fenêtre ou ligne de commande)
-scoring.py      taux d'erreur de mots et différences entre une transcription et le texte lu
-core.py         reformulation Codex optionnelle et lecture de la consommation
-settings.py     préférences, liste de raccourcis, découverte des mascottes
-windows.py      raccourci clavier, suivi du focus, insertion du texte (SendInput), multi-écran
-i18n.py         textes sources en anglais + traduction française
-tools/          aides d'installation, générateurs d'assets, rendu des captures
-tests/unit      tests sans affichage (lancés en CI)     tests/gui   vérifications sur un vrai bureau
-```
+Le panneau de consommation lit du JSON **local** depuis `quotas_url`, au format de l'API de limites de Codex (`rateLimits.primary` / `secondary` avec `usedPercent`, `windowDurationMins`, `resetsAt`, et `credits`). Sans lui, le panneau le dit et tout le reste fonctionne. L'usage du forfait Claude n'a pas d'API locale : le panneau renvoie seulement vers [claude.ai/settings/usage](https://claude.ai/settings/usage).
+</details>
 
 ## Développement
 
 ```powershell
 python -m venv .venv
 .venv\Scripts\pip install -r requirements-dev.txt
-.venv\Scripts\python -m pytest -q tests            # tests unitaires, sans affichage
-.venv\Scripts\python tests\gui\check_drag.py       # déplacement et survol sur un vrai bureau
-.venv\Scripts\python tests\gui\check_animation.py  # animations, packs et raccourcis
-.venv\Scripts\python tools\make_screenshots.py --lang fr --theme dark --out docs\img\fr --gif
+.venv\Scripts\python -m pytest -q tests            # tests unitaires, sans écran
+.venv\Scripts\python tests\gui\check_drag.py       # vérifications sur un vrai bureau (tests\gui\)
+.venv\Scripts\python tools\make_screenshots.py --lang fr --theme dark --out docs\img\fr
 ```
 
-Ajouter une langue : traduisez les textes dans `i18n.py` (un test vérifie que chaque `tr("…")` a sa traduction).
+`rover.py` est l'application ; `ui_kit.py` dessine panneaux, icônes et contrôles XP avec Pillow ; `layered.py` gère les fenêtres à alpha par pixel ; `mascots.py`/`mascot_setup.py` les animations ; `voice.py`, `transcribe.py`, `accel.py`, `modelstore.py` la parole ; `core.py`, `codex_server.py`, `styles.py` la reformulation ; `i18n.py` les textes anglais d'origine et la traduction française (un test vérifie que chaque texte en a une). Voir [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## Dépannage
 
 | Symptôme | Solution |
 |---|---|
-| *« Microphone indisponible »* | Paramètres Windows → Confidentialité → Microphone → autoriser les applications de bureau. |
-| *« Modèle Whisper indisponible »* | La première dictée a besoin d'internet pour récupérer le modèle ; lancez `install.ps1 -DownloadModel` en ligne. |
-| Ctrl+Alt+R ne fait rien | Une autre application possède ce raccourci ; cliquez sur la mascotte. |
-| Le texte part dans la mauvaise fenêtre | Cliquez dans le champ voulu *avant* de dicter ; la mascotte retient la dernière fenêtre utilisée. |
-| La saisie est peu fiable dans une application | Mettez `"insert": "copy"` : le texte va dans le presse-papiers et vous le collez vous-même. Le panneau a aussi un bouton **Copier** et le menu du clic droit propose *Copier le dernier texte*. |
-| « La clé API a été refusée » | Vérifiez la clé sur le site du fournisseur ; les abonnements ChatGPT ne fonctionnent pas ici (voir plus haut). Utilisez *Tester* dans les paramètres avancés. |
-| Une partie de mon brouillon a été remplacée | Le texte est tapé au niveau du curseur : un passage *sélectionné* est remplacé, comme avec n'importe quelle saisie. La mascotte ne prend jamais le focus du clavier quand on clique dessus, donc votre curseur et votre brouillon restent intacts. |
-| Un plantage | Consultez `rover.log` à côté de `rover.py`. |
+| « Micro indisponible » | Paramètres Windows → Confidentialité → Microphone → autoriser les applications de bureau. |
+| « Modèle Whisper indisponible » | Utilisez le bouton **Télécharger** du modèle dans les réglages avancés (internet une fois). |
+| Le raccourci ne fait rien | Un autre programme l'utilise : choisissez-en un autre dans les réglages avancés, ou cliquez sur la mascotte. |
+| Texte tapé dans la mauvaise fenêtre | Cliquez dans le champ cible *avant* de dicter. |
+| La saisie est peu fiable dans une application | Réglez *Quand le texte est prêt* sur *Copier seulement* et collez vous-même. |
+| Un plantage | Lisez `rover.log` à côté de `rover.py`. |
 
 ## Confidentialité et sécurité
 
-- Par défaut, l'audio est traité en mémoire par un modèle local et n'est jamais écrit sur disque ni envoyé. Seul le choix d'un service de transcription externe lui envoie l'enregistrement, et la clé API est alors stockée chiffrée pour votre compte Windows.
-- Les prompts ne sont pas conservés. La reformulation Codex optionnelle envoie le **texte transcrit** à OpenAI via votre propre session Codex, comme n'importe quel prompt Codex.
-- Les identifiants de vos comptes restent à leur place habituelle ; l'application ne les lit jamais.
-- Les icônes des raccourcis ne sont récupérées qu'aux adresses que vous ajoutez.
+L'audio est traité en mémoire par un modèle local, jamais écrit sur le disque ni envoyé, sauf si vous choisissez un service externe (l'enregistrement lui est alors envoyé, et sa clé est stockée chiffrée). La reformulation optionnelle envoie le **texte transcrit** (et, si vous l'activez, les dictées récentes) à OpenAI ou à Anthropic via votre propre session Codex ou Claude. Les identifiants de vos comptes restent là où leurs outils les gardent ; l'application ne les lit jamais. Les téléchargements (moteur vocal, modèles, mascottes) n'ont lieu que si vous appuyez sur un bouton ou lancez un outil, avec vérification d'empreinte quand il y en a une.
 
 ## Licence et crédits
 
-MIT © NathanNT. Voir [`LICENSE`](LICENSE) et [`NOTICE.md`](NOTICE.md).
-
-Clippy et les autres personnages Microsoft Agent appartiennent à Microsoft et n'apparaissent dans les captures que pour montrer la compatibilité ; les noms et logos d'OpenAI, ChatGPT, Codex et Claude appartiennent à leurs propriétaires et servent à identifier les raccourcis. Ce projet n'est affilié à aucun d'eux.
+MIT © NathanNT, voir [`LICENSE`](LICENSE) et [`NOTICE.md`](NOTICE.md). Clippy et les autres personnages Microsoft Agent appartiennent à Microsoft et n'apparaissent dans les captures que pour montrer la compatibilité ; Windows XP est une marque de Microsoft et ce thème est un hommage, pas une ressource officielle ; les noms et logos OpenAI, ChatGPT, Codex, Claude, Qwen et DeepSeek appartiennent à leurs propriétaires. Ce projet n'est affilié à aucun d'eux.
